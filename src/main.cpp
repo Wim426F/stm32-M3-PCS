@@ -27,6 +27,7 @@
 #include "stm32_can.h"
 #include "canmap.h"
 #include "cansdo.h"
+#include "sdocommands.h"
 #include "terminal.h"
 #include "params.h"
 #include "hwdefs.h"
@@ -194,6 +195,7 @@ static void Ms100Task(void)
       PCSCan::Msg321();
       PCSCan::Msg333();
       PCSCan::Msg3A1();
+
    }
 }
 
@@ -285,6 +287,8 @@ static void SetCanFilters()
    can->RegisterUserMessage(0x504); // PCS Boot ID
    can->RegisterUserMessage(0x76C); // PCS Debug output
    can->RegisterUserMessage(0x109); // VCU charge request and power limits
+
+   can->RegisterUserMessage(0x601); //CanSDO
 }
 
 // Whichever timer(s) you use for the scheduler, you have to
@@ -319,9 +323,8 @@ extern "C" int main(void)
 
    //Initialize CAN1, including interrupts. Clock must be enabled in clock_setup()
    //store a pointer for easier access
+   Stm32Can c(CAN1, (CanHardware::baudrates)Param::GetInt(Param::canspeed), true);
    FunctionPointerCallback canCb(CanCallback, SetCanFilters);
-
-   Stm32Can c(CAN1, CanHardware::Baud500);
    can = &c;
    can->AddCallback(&canCb);
    SetCanFilters();
@@ -330,22 +333,23 @@ extern "C" int main(void)
    CanMap cm(&c);
    canMap = &cm;
    TerminalCommands::SetCanMap(canMap);
+   //SdoCommands::SetCanMap(canMap);
 
    CanSdo sdo(&c, &cm);
    canSdo = &sdo;
    canSdo->SetNodeId(Param::GetInt(Param::nodeid)); //Set node ID for SDO access e.g. by wifi module
-
-   Stm32Scheduler s(TIM2); // We never exit main so it's ok to put it on stack
-   scheduler = &s;
 
    // Up to four tasks can be added to each timer scheduler
    // AddTask takes a function pointer and a calling interval in milliseconds.
    // The longest interval is 655ms due to hardware restrictions
    // You have to enable the interrupt (int this case for TIM2) in nvic_setup()
    // There you can also configure the priority of the scheduler over other interrupts
+   Stm32Scheduler s(TIM2); // We never exit main so it's ok to put it on stack
+   scheduler = &s;
    s.AddTask(Ms100Task, 100);
    s.AddTask(Ms50Task, 50);
    s.AddTask(Ms10Task, 10);
+
 
    Param::SetInt(Param::version, 2); // Backwards compatibility
    Param::Change(Param::PARAM_LAST); // Call callback one for general parameter propagation

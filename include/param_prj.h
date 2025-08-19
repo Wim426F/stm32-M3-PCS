@@ -66,6 +66,7 @@
    PARAM_ENTRY(CAT_GEN,     Alerts,      "",        0,      9,      0,      13  ) \
    PARAM_ENTRY(CAT_GEN,     AlertLog,    OFFON,     0,      1,      1,      14  ) \
    PARAM_ENTRY(CAT_COMM,    nodeid,      "",        1,      63,     49,     15  ) \
+   PARAM_ENTRY(CAT_COMM,    canspeed,    CANSPEEDS, 0,      4,      2,      16  ) \
    VALUE_ENTRY(version,     VERSTR,    2000) \
    VALUE_ENTRY(opmode,      OPMODES,   2001) \
    VALUE_ENTRY(state,       STATES,    2002) \
@@ -102,6 +103,7 @@
 
 
 /***** Enum String definitions *****/
+#define CANSPEEDS    "0=125k, 1=250k, 2=500k, 3=800k, 4=1M"
 #define OPMODES      "0=Off, 1=Run, 2=Precharge, 3=PchFail, 4=Charge"
 #define CHARGERS     "1=Charger1, 2=Charger2, 4=Charger3"
 #define C_STAT       "0=Init, 1=Idle, 2=Startup, 3=WaitAC, 4=Qualify, 5=Config, 6=Enable, 7=Shutdown, 8=Faulted, 9=CLRFaults"

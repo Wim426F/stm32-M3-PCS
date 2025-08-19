@@ -32,7 +32,8 @@ obj/main.o: src/main.cpp libopencm3/include/libopencm3/stm32/usart.h \
  libopeninv/include/canmap.h libopeninv/include/params.h \
  include/param_prj.h libopeninv/include/my_fp.h \
  libopeninv/include/cansdo.h libopeninv/include/printf.h \
- libopeninv/include/canmap.h libopeninv/include/terminal.h \
+ libopeninv/include/canmap.h libopeninv/include/sdocommands.h \
+ libopeninv/include/cansdo.h libopeninv/include/terminal.h \
  libopeninv/include/params.h include/hwdefs.h libopeninv/include/digio.h \
  include/digio_prj.h include/hwdefs.h include/hwinit.h \
  libopeninv/include/anain.h include/anain_prj.h \
@@ -118,6 +119,10 @@ libopeninv/include/cansdo.h:
 libopeninv/include/printf.h:
 
 libopeninv/include/canmap.h:
+
+libopeninv/include/sdocommands.h:
+
+libopeninv/include/cansdo.h:
 
 libopeninv/include/terminal.h:
 
