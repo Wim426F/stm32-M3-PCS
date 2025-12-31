@@ -1,7 +1,8 @@
 /*
- * This file is part of the stm32-template project.
+ * This file is part of the Model 3 PCS Controller project.
  *
  * Copyright (C) 2020 Johannes Huebner <dev@johanneshuebner.com>
+ *               2025 Wim Boone
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,8 +23,7 @@
 #include <libopencm3/stm32/rtc.h>
 #include <libopencm3/stm32/can.h>
 #include <libopencm3/stm32/iwdg.h>
-#include <libopencm3/stm32/gpio.h>
-#include <libopencm3/stm32/exti.h>
+#include <libopencm3/stm32/crc.h>
 #include "stm32_can.h"
 #include "canmap.h"
 #include "cansdo.h"
@@ -40,13 +40,20 @@
 #include "printf.h"
 #include "stm32scheduler.h"
 #include "terminalcommands.h"
-
 #include "PCSCan.h"
 
-#define CAN_TIMEOUT 50  //500ms
 #define PRINT_JSON 0
 
 extern "C" void __cxa_pure_virtual() { while (1); }
+
+struct CanMsg {
+   uint32_t id;
+   uint32_t data[2];
+   uint8_t dlc;
+};
+static CanMsg rxQueue[20];  // Circular buffer (size 20 for bursts)
+static volatile int rxWrite = 0;  // ISR writes
+static volatile int rxRead = 0;   // Task reads
 
 static Stm32Scheduler *scheduler;
 static CanHardware* can;
@@ -60,6 +67,13 @@ static uint16_t ChgPower = 0;
 static uint8_t pwrDntmr = 10;
 static bool ZeroPower = false;
 
+
+static void delay_ms(int64_t FLASH_DELAY)
+{
+    int64_t i;
+    for (i = 0; i < (FLASH_DELAY * 2000); i++)
+    __asm__("nop");
+}
 
 static bool CheckDelay()
 {
@@ -75,10 +89,30 @@ static bool CheckDelay()
    }
 }
 
+void handle109(uint32_t data[2])
+{
+   uint8_t* bytes = (uint8_t*)data;//Mux id in byte 0.
+
+   static bool vcuEn = false;
+
+   Param::SetInt(Param::opmode, bytes[0]); // opmode from VCU
+
+   uint16_t vcuHVvolts=(bytes[2]<<8 |bytes[1]); //hv voltage from vcu
+
+   Param::SetInt(Param::udcspnt, (bytes[4]<<8 | bytes[3])); // HV voltage setpoint from vcu
+   Param::SetInt(Param::pacspnt, (bytes[6]<<8 | bytes[5])); // max charger power from vcu
+   
+   // Set iaclim from (bits 56–59, encoded as 0–15 for 1–16A)
+   uint8_t currentLimit = bytes[7] & 0xF; // Extract 4-bit CurrentLimit
+   Param::SetInt(Param::iaclim, currentLimit + 1); // Map 0–15 to 1–16A
+
+   if((bytes[7]>>4)==0xA) Param::SetInt(Param::chargerEnable, 1); // enable/disable request from vcu
+   if((bytes[7]>>4)==0xC) Param::SetInt(Param::chargerEnable, 0);
+}
+
 
 static void ChargerStateMachine()
 {
-   uint8_t PCS_CHG_Status = Param::GetInt(Param::CHG_STAT);
    uint8_t opmode = Param::GetInt(Param::opmode);
 
    switch (opmode)
@@ -127,8 +161,8 @@ static void ChargerStateMachine()
 uint16_t ChgPwrRamp()
 {
    uint8_t Charger_state = Param::GetInt(Param::CHG_STAT);
-   uint16_t Charger_Pwr_Max = Param::GetInt(Param::pacspnt) * 1000;
-   if (Charger_state != 6)
+   uint16_t Charger_Pwr_Max = Param::GetInt(Param::pacspnt);
+   if (Charger_state != chargerStates::ENABLE)
       ChgPower = 0; // Set power =0 unless charger is enabled.
    if (ZeroPower)
       ChgPower = 0;
@@ -143,14 +177,81 @@ uint16_t ChgPwrRamp()
    return ChgPower;
 }
 
-static void Ms10Task(void)
+static void Ms1Task(void) // actually 10 and 100ms task effectively
 {
-   if (CAN_Enable)
+   // Process RX queue here instead of in ISR CanCallback, this avoids ISR interrupting too long
+   while (rxRead != rxWrite) {
+      CanMsg m = rxQueue[rxRead];
+      rxRead = (rxRead + 1) % 20;
+      switch (m.id) {
+         case 0x204: PCSCan::handle204(m.data); break;
+         case 0x224: PCSCan::handle224(m.data); break;
+         case 0x264: PCSCan::handle264(m.data); break;
+         case 0x2A4: PCSCan::handle2A4(m.data); break;
+         case 0x2C4: PCSCan::handle2C4(m.data); break;
+         case 0x3A4: PCSCan::handle3A4(m.data); break;
+         case 0x424: PCSCan::handle424(m.data); break;
+         case 0x504: PCSCan::handle504(m.data); break;
+         case 0x76C: PCSCan::handle76C(m.data); break;
+         case 0x109: handle109(m.data); break;
+         default: break;
+      }
+   }
+
+
+   /* * FIXME: The CAN driver currently struggles with TX Mailbox congestion
+      * when firing many messages back-to-back. Instead of using blocking delays,
+      * we stagger the messages across a 100ms window using the 1ms base task.
+      * This ensures the hardware mailboxes have time to clear between bursts.
+   */
+   static uint8_t tick_count = 0; // 0-99 (100ms cycle)
+
+   if (!CAN_Enable)
    {
-      // Send 10ms PCS CAN when enabled.
+      tick_count = 0;
+      return;
+   }
+
+   // Handle the 10ms messages (Total: 3 messages)
+   // We fire these at 5ms, 15ms, 25ms... 95ms
+   if ((tick_count % 10) == 5)
+   {
       PCSCan::Msg13D();
       PCSCan::Msg22A();
       PCSCan::Msg3B2();
+   }
+
+   // Handle the 100ms messages (Total: 11 messages)
+   // We spread these out so we never hit the driver too hard
+   switch (tick_count)
+   {
+      case 0:
+         PCSCan::Msg20A();
+         PCSCan::Msg212();
+         break;
+      case 10:
+         PCSCan::Msg21D();
+         PCSCan::Msg232();
+         break;
+      case 20:
+         PCSCan::Msg23D();
+         PCSCan::Msg25D();
+         break;
+      case 30:
+         PCSCan::Msg2B2(ChgPwrRamp());
+         PCSCan::Msg321();
+         break;
+      case 40:
+         PCSCan::Msg333();
+         PCSCan::Msg3A1();
+         break;
+   }
+
+   // Increment and wrap
+   tick_count++;
+   if (tick_count >= 100)
+   {
+      tick_count = 0;
    }
 }
 
@@ -181,102 +282,14 @@ static void Ms100Task(void)
 
    ChargerStateMachine();
    PCSCan::AlertHandler();
-
-   if (CAN_Enable)
-   {
-      // Send 100ms PCS CAN when enabled.
-      PCSCan::Msg20A();
-      PCSCan::Msg212();
-      PCSCan::Msg21D();
-      PCSCan::Msg232();
-      PCSCan::Msg23D();
-      PCSCan::Msg25D();
-      PCSCan::Msg2B2(ChgPwrRamp());
-      PCSCan::Msg321();
-      PCSCan::Msg333();
-      PCSCan::Msg3A1();
-
-   }
 }
 
-void handle109(uint32_t data[2])
-{
-   uint8_t* bytes = (uint8_t*)data;//Mux id in byte 0.
 
-   static bool vcuEn = false;
-
-   Param::SetInt(Param::opmode, bytes[0]); // opmode from VCU
-
-   uint16_t vcuHVvolts=(bytes[2]<<8 |bytes[1]); //hv voltage from vcu
-
-   Param::SetInt(Param::udcspnt, (bytes[4]<<8 | bytes[3])); // HV voltage setpoint from vcu
-   Param::SetInt(Param::pacspnt, (bytes[6]<<8 | bytes[5])); // max charger power from vcu
-   
-   // Set iaclim from (bits 56–59, encoded as 0–15 for 1–16A)
-   uint8_t currentLimit = bytes[7] & 0xF; // Extract 4-bit CurrentLimit
-   Param::SetInt(Param::iaclim, currentLimit + 1); // Map 0–15 to 1–16A
-
-   if((bytes[7]>>4)==0xA) Param::SetInt(Param::chargerEnable, true); // enable/disable request from vcu
-   if((bytes[7]>>4)==0xC) Param::SetInt(Param::chargerEnable, false);
-}
-
-/** This function is called when the user changes a parameter */
-void Param::Change(Param::PARAM_NUM paramNum)
-{
-   switch (paramNum)
-   {
-      case Param::nodeid:
-         canSdo->SetNodeId(Param::GetInt(Param::nodeid)); //Set node ID for SDO access
-         break;
-
-      default:
-         // Handle general parameter changes here. Add paramNum labels for handling specific parameters
-         break;
-   }
-}
-
-static bool CanCallback(uint32_t id, uint32_t data[2], uint8_t dlc) // Called when a defined CAN message is received.
-{
-   switch (id)
-   {
-   case 0x204:
-      PCSCan::handle204(data); // PCS Charge status
-      break;
-   case 0x224:
-      PCSCan::handle224(data); // DCDC Info
-      break;
-   case 0x264:
-      PCSCan::handle264(data); // PCS Charge Line Status
-      break;
-   case 0x2A4:
-      PCSCan::handle2A4(data); // PCS Temps
-      break;
-   case 0x2C4:
-      PCSCan::handle2C4(data); // PCS Logging
-      break;
-   case 0x3A4:
-      PCSCan::handle3A4(data); // PCS Alert Matrix
-      break;
-   case 0x424:
-      PCSCan::handle424(data); // PCS Alert Log
-      break;
-   case 0x504:
-      PCSCan::handle504(data); // PCS Boot ID
-      break;
-   case 0x76C:
-      PCSCan::handle76C(data); // PCS Debug output
-      break;
-
-   case 0x109:
-      handle109(data); // VCU charge request and power limits
-
-   default: 
-      break;
-   }
-}
-
+//Whenever the user clears mapped can messages or changes the
+//CAN interface of a device, this will be called by the CanHardware module
 static void SetCanFilters()
 {
+   // Set up CAN  callback and messages to listen for
    can->RegisterUserMessage(0x204); // PCS Charge Status
    can->RegisterUserMessage(0x224); // PCS DCDC Status
    can->RegisterUserMessage(0x264); // PCS Chg Line Status
@@ -286,9 +299,41 @@ static void SetCanFilters()
    can->RegisterUserMessage(0x424); // PCS Alert Log
    can->RegisterUserMessage(0x504); // PCS Boot ID
    can->RegisterUserMessage(0x76C); // PCS Debug output
-   can->RegisterUserMessage(0x109); // VCU charge request and power limits
+   can->RegisterUserMessage(0x109); // VCU charge request
+}
 
-   can->RegisterUserMessage(0x601); //CanSDO
+/** This function is called when the user changes a parameter */
+void Param::Change(Param::PARAM_NUM paramNum)
+{
+   switch (paramNum)
+   {
+   case Param::canspeed: 
+      can->SetBaudrate((CanHardware::baudrates)Param::GetInt(Param::canspeed));
+      break;
+
+   case Param::nodeid:
+      canSdo->SetNodeId(Param::GetInt(Param::nodeid)); //Set node ID for SDO access
+      //can->RegisterUserMessage(0x600 + Param::GetInt(Param::nodeid)); // Dynamic CanSDO request COB-ID (0x600 + Node-ID)
+      break;
+
+   default:
+      // Handle general parameter changes here. Add paramNum labels for handling specific parameters
+      break;
+   }
+}
+
+static bool CanCallback(uint32_t id, uint32_t data[2], uint8_t dlc) {
+   // queue all messages instead of processing the handlers directly, this avoids ISR interrupting too long
+   int nextWrite = (rxWrite + 1) % 20;
+   if (nextWrite != rxRead) {
+      rxQueue[rxWrite].id = id;
+      rxQueue[rxWrite].data[0] = data[0];
+      rxQueue[rxWrite].data[1] = data[1];
+      rxQueue[rxWrite].dlc = dlc;
+      rxWrite = nextWrite;
+      return true;
+   }
+   return false;
 }
 
 // Whichever timer(s) you use for the scheduler, you have to
@@ -304,63 +349,71 @@ extern "C" int main(void)
 
    clock_setup(); // Must always come first
    rtc_setup();
-
    ANA_IN_CONFIGURE(ANA_IN_LIST);
    DIG_IO_CONFIGURE(DIG_IO_LIST);
-
    AnaIn::Start();             // Starts background ADC conversion via DMA
-
    write_bootloader_pininit(); // Instructs boot loader to initialize certain pins
    gpio_primary_remap(AFIO_MAPR_SWJ_CFG_JTAG_OFF_SW_ON, AFIO_MAPR_CAN1_REMAP_PORTB);
+
    tim_setup();                  // Use timer3 for sampling pilot PWM
    nvic_setup();                 // Set up some interrupts
    parm_load();                  // Load stored parameters
-   Param::Change(Param::idckp);  // Call callback once for parameter propagation
-   Param::Change(Param::idclim); // Call callback once for parameter propagation
 
-   Terminal t(USART3, termCmds);
-   terminal = &t;
-
-   //Initialize CAN1, including interrupts. Clock must be enabled in clock_setup()
    //store a pointer for easier access
-   Stm32Can c(CAN1, (CanHardware::baudrates)Param::GetInt(Param::canspeed), true);
    FunctionPointerCallback canCb(CanCallback, SetCanFilters);
+
+   Stm32Can c(CAN1, (CanHardware::baudrates)Param::GetInt(Param::canspeed), true);
    can = &c;
    can->AddCallback(&canCb);
    SetCanFilters();
-   PCSCan::setCanHardware(can);
 
    CanMap cm(&c);
    canMap = &cm;
    TerminalCommands::SetCanMap(canMap);
-   //SdoCommands::SetCanMap(canMap);
 
    CanSdo sdo(&c, &cm);
    canSdo = &sdo;
    canSdo->SetNodeId(Param::GetInt(Param::nodeid)); //Set node ID for SDO access e.g. by wifi module
+   SdoCommands::SetCanMap(canMap);
+
+   Stm32Scheduler s(TIM2); // We never exit main so it's ok to put it on stack
+   scheduler = &s;
+
+   Terminal t(USART3, termCmds);
+   terminal = &t;
 
    // Up to four tasks can be added to each timer scheduler
    // AddTask takes a function pointer and a calling interval in milliseconds.
    // The longest interval is 655ms due to hardware restrictions
    // You have to enable the interrupt (int this case for TIM2) in nvic_setup()
    // There you can also configure the priority of the scheduler over other interrupts
-   Stm32Scheduler s(TIM2); // We never exit main so it's ok to put it on stack
-   scheduler = &s;
    s.AddTask(Ms100Task, 100);
    s.AddTask(Ms50Task, 50);
-   s.AddTask(Ms10Task, 10);
+   s.AddTask(Ms1Task, 1);
 
+   // backward compatibility, version 4 was the first to support the "stream" command
+   Param::SetInt(Param::version, 4);
 
-   Param::SetInt(Param::version, 2); // Backwards compatibility
-   Param::Change(Param::PARAM_LAST); // Call callback one for general parameter propagation
-
-   while (1)
+   // Now all our main() does is running the terminal
+   // All other processing takes place in the scheduler or other interrupt service routines
+   // The terminal has lowest priority, so even loading it down heavily will not disturb
+   // our more important processing routines.
+   while(1)
    {
       char c = 0;
-      terminal->Run();  
+      CanSdo::SdoFrame* sdoFrame = sdo.GetPendingUserspaceSdo();
+      terminal->Run();
+
       if (canSdo->GetPrintRequest() == PRINT_JSON)
       {
-         TerminalCommands::PrintParamsJson(&sdo, &c);
+         TerminalCommands::PrintParamsJson(canSdo, &c);
+      }
+      if (0 != sdoFrame)
+      {
+         CanSdo::SdoFrame sdoOrig = *sdoFrame;
+         SdoCommands::ProcessStandardCommands(sdoFrame);
+
+         sdo.SendSdoReply(sdoFrame);
       }
    }
 

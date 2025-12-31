@@ -39,7 +39,7 @@
  */
 
 //Define a version string of your firmware here
-#define VER 2.00.WIM
+#define VER 2.2.WIM
 
 /* Entries must be ordered as follows:
    1. Saveable parameters (id != 0)
@@ -50,55 +50,49 @@
 //Next value Id: 2051
 /*              category     name         unit       min     max     default id */
 #define PARAM_LIST \
-   PARAM_ENTRY(CAT_CHARGER, pacspnt,     "kW",      0,      11,     11,     0   ) \
+   PARAM_ENTRY(CAT_CHARGER, pacspnt,     "W",       0,      11,     11,     0   ) \
    PARAM_ENTRY(CAT_CHARGER, idclim,      "A",       0,      45,     45,     1   ) \
    PARAM_ENTRY(CAT_CHARGER, iaclim,      "A",       0,      72,     16,     2   ) \
    PARAM_ENTRY(CAT_CHARGER, udcspnt,     "V",       50,     420,    403,    3   ) \
-   PARAM_ENTRY(CAT_CHARGER, udclim,      "V",       50,     420,    398,    4   ) \
-   PARAM_ENTRY(CAT_CHARGER, timelim,     "minutes", -1,     10000,  -1,     5   ) \
-   PARAM_ENTRY(CAT_CHARGER, timedly,     "minutes", -1,     10000,  -1,     6   ) \
-   PARAM_ENTRY(CAT_CHARGER, cancontrol,  OFFON,     0,      1,      0,      7  ) \
-   PARAM_ENTRY(CAT_CHARGER, idckp,       "",        0,      10000,  1,      8  ) \
-   PARAM_ENTRY(CAT_CHARGER, idcki,       "",        0,      10000,  10,     9  ) \
-   PARAM_ENTRY(CAT_CHARGER, modelcode,   MODELS,    0,      1,      0,      10  ) \
-   PARAM_ENTRY(CAT_CHARGER, activate,    DEVS,      0,      3,      3,      11  ) \
-   PARAM_ENTRY(CAT_DCDC,    udcdc,       "V",       12,     15,     14,     12  ) \
-   PARAM_ENTRY(CAT_GEN,     Alerts,      "",        0,      9,      0,      13  ) \
-   PARAM_ENTRY(CAT_GEN,     AlertLog,    OFFON,     0,      1,      1,      14  ) \
-   PARAM_ENTRY(CAT_COMM,    nodeid,      "",        1,      63,     49,     15  ) \
-   PARAM_ENTRY(CAT_COMM,    canspeed,    CANSPEEDS, 0,      4,      2,      16  ) \
+   PARAM_ENTRY(CAT_CHARGER, timelim,     "minutes", -1,     10000,  -1,     4   ) \
+   PARAM_ENTRY(CAT_CHARGER, timedly,     "minutes", -1,     10000,  -1,     5   ) \
+   PARAM_ENTRY(CAT_CHARGER, modelcode,   MODELS,    0,      1,      0,      6  ) \
+   PARAM_ENTRY(CAT_DCDC,    udcdc,       "V",       12,     15,     14,     7  ) \
+   PARAM_ENTRY(CAT_GEN,     Alerts,      "",        0,      9,      0,      8  ) \
+   PARAM_ENTRY(CAT_GEN,     AlertLog,    OFFON,     0,      1,      1,      9  ) \
+   PARAM_ENTRY(CAT_COMM,    nodeid,      "",        1,      63,     49,     10  ) \
+   PARAM_ENTRY(CAT_COMM,    canspeed,    CANSPEEDS, 0,      4,      2,      11  ) \
    VALUE_ENTRY(version,     VERSTR,    2000) \
    VALUE_ENTRY(opmode,      OPMODES,   2001) \
-   VALUE_ENTRY(state,       STATES,    2002) \
-   VALUE_ENTRY(chargerEnable,OFFON,    2003) \
+   VALUE_ENTRY(chargerEnable,OFFON,    2002) \
+   VALUE_ENTRY(activate,    DEVS,      2003) \
    VALUE_ENTRY(uaux,        "V",       2004) \
    VALUE_ENTRY(hwaclim,     "A",       2005) \
    VALUE_ENTRY(powerac,     "kW",      2006) \
    VALUE_ENTRY(powerdcdc,   "W",       2007) \
    VALUE_ENTRY(udc,         "V",       2008) \
-   VALUE_ENTRY(udcbatt,     "V",       2009) \
-   VALUE_ENTRY(ulv,         "V",       2010) \
-   VALUE_ENTRY(uac,         "V",       2011) \
-   VALUE_ENTRY(iac,         "A",       2012) \
-   VALUE_ENTRY(idc,         "A",       2013) \
-   VALUE_ENTRY(idcdc,       "A",       2014) \
-   VALUE_ENTRY(ChgACLim,    "A",       2015) \
-   VALUE_ENTRY(PCS_Type,    TYPES,     2016) \
-   VALUE_ENTRY(CHG_STAT,    C_STAT,    2017) \
-   VALUE_ENTRY(CHGPAvail,   "kW",      2018) \
-   VALUE_ENTRY(GridCFG,     GCFG,      2019) \
-   VALUE_ENTRY(ChgATemp,    "C",       2020) \
-   VALUE_ENTRY(ChgBTemp,    "C",       2021) \
-   VALUE_ENTRY(ChgCTemp,    "C",       2022) \
-   VALUE_ENTRY(DCDCTemp,    "C",       2023) \
-   VALUE_ENTRY(DCDCBTemp,   "C",       2024) \
-   VALUE_ENTRY(PCSAmbTemp,  "C",       2025) \
-   VALUE_ENTRY(PCSBoot,     "dig",     2026) \
-   VALUE_ENTRY(PCSAlerts,   ALERTS,    2027) \
-   VALUE_ENTRY(PCSAlertCnt, "dig",     2028) \
-   VALUE_ENTRY(lasterr,     errorListString, 2029) \
-   VALUE_ENTRY(uptime,      "s",       2030) \
-   VALUE_ENTRY(cpuload,     "%",       2031) \
+   VALUE_ENTRY(ulv,         "V",       2009) \
+   VALUE_ENTRY(uac,         "V",       2010) \
+   VALUE_ENTRY(iac,         "A",       2011) \
+   VALUE_ENTRY(idc,         "A",       2012) \
+   VALUE_ENTRY(idcdc,       "A",       2013) \
+   VALUE_ENTRY(ChgACLim,    "A",       2014) \
+   VALUE_ENTRY(PCS_Type,    TYPES,     2015) \
+   VALUE_ENTRY(CHG_STAT,    C_STAT,    2016) \
+   VALUE_ENTRY(CHGPAvail,   "kW",      2017) \
+   VALUE_ENTRY(GridCFG,     GCFG,      2018) \
+   VALUE_ENTRY(ChgATemp,    "C",       2019) \
+   VALUE_ENTRY(ChgBTemp,    "C",       2020) \
+   VALUE_ENTRY(ChgCTemp,    "C",       2021) \
+   VALUE_ENTRY(DCDCTemp,    "C",       2022) \
+   VALUE_ENTRY(DCDCBTemp,   "C",       2023) \
+   VALUE_ENTRY(PCSAmbTemp,  "C",       2024) \
+   VALUE_ENTRY(PCSBoot,     "dig",     2025) \
+   VALUE_ENTRY(PCSAlerts,   ALERTS,    2026) \
+   VALUE_ENTRY(PCSAlertCnt, "dig",     2027) \
+   VALUE_ENTRY(lasterr,errorListString,2028) \
+   VALUE_ENTRY(uptime,      "s",       2029) \
+   VALUE_ENTRY(cpuload,     "%",       2030) \
 
 
 
@@ -166,17 +160,20 @@ enum gridConfig
    GRID_3PHASE_DELTA
 };
 
-enum states
+enum chargerStates
 {
-   OFF,
-   WAITSTART,
-   ENABLE,
-   ACTIVATE,
-   EVSEACTIVATE,
-   DRIVE_START,
-   DRIVE,
-   STOP
+   INIT = 0, 
+   IDLE, 
+   STARTUP, 
+   WAIT_AC, 
+   QUALIFY, 
+   CONFIG, 
+   ENABLE, 
+   SHUTDOWN, 
+   FAULTED, 
+   CLR_FAULTS
 };
+
 
 enum _canspeeds
 {

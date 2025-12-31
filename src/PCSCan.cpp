@@ -1,3 +1,24 @@
+/*
+ * This file is part of the Model 3 PCS Controller project.
+ *
+ * Copyright (C)  2020 Damien Maquire
+ *                2025 Wim Boone
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+
 #include "PCSCan.h"
 
 // PCS Control Flags
@@ -54,16 +75,6 @@ uint16_t AlertCANId = 0;
 uint8_t AlertRxError = 0;  
 static uint8_t pcs_alert_matrix[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-
-
-// Define and initialize the static member
-CanHardware *PCSCan::can = nullptr;
-
-// Implement the setter method
-void PCSCan::setCanHardware(CanHardware *hardware)
-{
-   can = hardware;
-}
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////PCS CAN Messages To Receive
@@ -267,7 +278,7 @@ void PCSCan::Msg13D() // Required by post 2020 firmwares. Mirrors some content i
    bytes[3] = 0X1A;
    bytes[4] = 0xFF;
    bytes[5] = 0x02;
-   can->Send(0x13D, (uint32_t *)bytes, 6);
+   Stm32Can::GetInterface(0)->Send(0x13D, (uint32_t *)bytes, 6);
 }
 
 void PCSCan::Msg20A()
@@ -279,7 +290,7 @@ void PCSCan::Msg20A()
    bytes[3] = 0x82;
    bytes[4] = 0x18;
    bytes[5] = 0x01;
-   can->Send(0x20A, (uint32_t *)bytes, 6);
+   Stm32Can::GetInterface(0)->Send(0x20A, (uint32_t *)bytes, 6);
 }
 
 void PCSCan::Msg212()
@@ -293,7 +304,7 @@ void PCSCan::Msg212()
    bytes[5] = 0x15;
    bytes[6] = 0x06;
    bytes[7] = 0x63;
-   can->Send(0x212, (uint32_t *)bytes, 8);
+   Stm32Can::GetInterface(0)->Send(0x212, (uint32_t *)bytes, 8);
 }
 
 void PCSCan::Msg21D()
@@ -309,7 +320,7 @@ void PCSCan::Msg21D()
    bytes[5] = 0x00;
    bytes[6] = 0x60;
    bytes[7] = 0x10;
-   can->Send(0x21D, (uint32_t *)bytes, 8);
+   Stm32Can::GetInterface(0)->Send(0x21D, (uint32_t *)bytes, 8);
 }
 
 void PCSCan::Msg22A()
@@ -328,7 +339,7 @@ void PCSCan::Msg22A()
    if (activate == EN_BOTH)
       bytes[2] = (HVVolts & 0xF) << 4 | 0xD; // Charger en and DCDC en
    bytes[3] = (HVVolts >> 4) & 0xFF;         // 0x17;//Measured hv voltage. 0x177 = 375v.
-   can->Send(0x22A, (uint32_t *)bytes, 4);
+   Stm32Can::GetInterface(0)->Send(0x22A, (uint32_t *)bytes, 4);
 }
 
 void PCSCan::Msg232()
@@ -343,7 +354,7 @@ void PCSCan::Msg232()
    bytes[5] = 0x04;
    bytes[6] = 0x00;
    bytes[7] = 0x00;
-   can->Send(0x232, (uint32_t *)bytes, 8);
+   Stm32Can::GetInterface(0)->Send(0x232, (uint32_t *)bytes, 8);
 }
 
 void PCSCan::Msg23D()
@@ -352,12 +363,11 @@ void PCSCan::Msg23D()
    uint8_t bytes[4];
    ACILim = Param::GetInt(Param::iaclim) * 2;
 
-   Param::GetInt(Param::chargerEnable);
    bytes[0] = Param::GetInt(Param::chargerEnable) ? 0x05 : 0x0A; // 0x05 if enabled, else 0x0A
    bytes[1] = ACILim;                                            // charge current limit. gain 0.5. 0x40 = 64 dec =32A. Populate AC lim in here.
    bytes[2] = 0xFF;                                              // Internal max current limit.
    bytes[3] = 0x0F;
-   can->Send(0x23D, (uint32_t *)bytes, 4);
+   Stm32Can::GetInterface(0)->Send(0x23D, (uint32_t *)bytes, 4);
 }
 
 void PCSCan::Msg25D()
@@ -372,13 +382,13 @@ void PCSCan::Msg25D()
    bytes[5] = 0xC1;
    bytes[6] = 0x0A;
    bytes[7] = 0xE0;
-   can->Send(0x25D, (uint32_t *)bytes, 8);
+   Stm32Can::GetInterface(0)->Send(0x25D, (uint32_t *)bytes, 8);
 }
 
 void PCSCan::Msg2B2(uint16_t Charger_Power)
 {
    // Charge Power Request
-   PCS_Power_Req = Charger_Power; // Param::GetFloat(Param::pacspnt)*1000.0f;
+   PCS_Power_Req = Charger_Power; // in Watts
    if (!Short2B2)
    {
       uint8_t bytes[5]; // Older firmware sends this as dlc=3, newer sends as dlc=5.
@@ -388,7 +398,7 @@ void PCSCan::Msg2B2(uint16_t Charger_Power)
       bytes[2] = Param::GetInt(Param::chargerEnable) ? 0x02 : 0x00; // 0x02 if enabled, else 0x00
       bytes[3] = 0x00;
       bytes[4] = 0x00;
-      can->Send(0x2B2, (uint32_t *)bytes, 5);
+      Stm32Can::GetInterface(0)->Send(0x2B2, (uint32_t *)bytes, 5);
    }
    else
    {
@@ -397,7 +407,7 @@ void PCSCan::Msg2B2(uint16_t Charger_Power)
       bytes[0] = PCS_Power_Req & 0xFF; // KW scale 0.001 16 bit unsigned in bytes 0 and 1. e.g. 0x0578 = 1400 dec = 1400Watts=1.4kW.
       bytes[1] = PCS_Power_Req >> 8;
       bytes[2] = Param::GetInt(Param::chargerEnable) ? 0x02 : 0x00; // 0x02 if enabled, else 0x00
-      can->Send(0x2B2, (uint32_t *)bytes, 3);
+      Stm32Can::GetInterface(0)->Send(0x2B2, (uint32_t *)bytes, 3);
    }
 }
 
@@ -412,7 +422,7 @@ void PCSCan::Msg321()
    bytes[5] = 0x7F;
    bytes[6] = 0x00;
    bytes[7] = 0x00;
-   can->Send(0x321, (uint32_t *)bytes, 8);
+   Stm32Can::GetInterface(0)->Send(0x321, (uint32_t *)bytes, 8);
 }
 
 void PCSCan::Msg333()
@@ -422,7 +432,7 @@ void PCSCan::Msg333()
    bytes[1] = 0x30;  // byte one. 7 bits scale 1. 0x30=48A.
    bytes[2] = 0x29;
    bytes[3] = 0x07;
-   can->Send(0x333, (uint32_t *)bytes, 4);
+   Stm32Can::GetInterface(0)->Send(0x333, (uint32_t *)bytes, 4);
 }
 
 void PCSCan::Msg3A1()
@@ -437,7 +447,7 @@ void PCSCan::Msg3A1()
    bytes[5] = 0x2C;
    bytes[6] = 0x12;
    bytes[7] = 0x5A;
-   can->Send(0x3A1, (uint32_t *)bytes, 8);
+   Stm32Can::GetInterface(0)->Send(0x3A1, (uint32_t *)bytes, 8);
 }
 
 void PCSCan::Msg3B2()
@@ -453,7 +463,7 @@ void PCSCan::Msg3B2()
       bytes[5] = 0x66;
       bytes[6] = 0xBB;
       bytes[7] = 0x11;
-      can->Send(0x3B2, (uint32_t *)bytes, 8);
+      Stm32Can::GetInterface(0)->Send(0x3B2, (uint32_t *)bytes, 8);
       mux3b2 = false;
    }
    else
@@ -466,7 +476,7 @@ void PCSCan::Msg3B2()
       bytes[5] = 0x66;
       bytes[6] = 0xBB;
       bytes[7] = 0x06;
-      can->Send(0x3B2, (uint32_t *)bytes, 8);
+      Stm32Can::GetInterface(0)->Send(0x3B2, (uint32_t *)bytes, 8);
       mux3b2 = true;
    }
 }
@@ -484,7 +494,7 @@ void PCSCan::Msg545()
       bytes[5] = 0x01;
       bytes[6] = (Count545 << 4) | 0xA;
       bytes[7] = CalcPCSChecksum((uint8_t *)bytes, 0x545);
-      can->Send(0x545, (uint32_t *)bytes, 8);
+      Stm32Can::GetInterface(0)->Send(0x545, (uint32_t *)bytes, 8);
       mux545 = false;
    }
    else
@@ -497,7 +507,7 @@ void PCSCan::Msg545()
       bytes[5] = 0x00;
       bytes[6] = (Count545 << 4);
       bytes[7] = CalcPCSChecksum((uint8_t *)bytes, 0x545);
-      can->Send(0x545, (uint32_t *)bytes, 8);
+      Stm32Can::GetInterface(0)->Send(0x545, (uint32_t *)bytes, 8);
       mux545 = true;
    }
    Count545++;

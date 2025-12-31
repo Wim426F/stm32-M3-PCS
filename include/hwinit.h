@@ -1,5 +1,5 @@
 /*
- * This file is part of the stm32-template project.
+ * This file is part of the Model 3 PCS Controller project.
  *
  * Copyright (C) 2020 Johannes Huebner <dev@johanneshuebner.com>
  *

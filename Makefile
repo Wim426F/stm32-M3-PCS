@@ -27,29 +27,33 @@ LD		      = $(PREFIX)-gcc
 OBJCOPY		= $(PREFIX)-objcopy
 OBJDUMP		= $(PREFIX)-objdump
 MKDIR_P     = mkdir -p
-TERMINAL_DEBUG ?= 0
 CFLAGS		= -Os -Wall -Wextra -Iinclude/ -Ilibopeninv/include -Ilibopencm3/include \
-             -fno-common -fno-builtin -pedantic -DSTM32F1 -DMAX_MESSAGES=15 -DT_DEBUG=$(TERMINAL_DEBUG) \
-				 -mcpu=cortex-m3 -mthumb -std=gnu99 -ffunction-sections -fdata-sections
-CPPFLAGS    = -Og -g3 -Wall -Wextra -Iinclude/ -Ilibopeninv/include -Ilibopencm3/include \
-            -fno-common -std=c++11 -pedantic -DSTM32F1 -DT_DEBUG=$(TERMINAL_DEBUG) \
-				-ffunction-sections -fdata-sections -fno-builtin -fno-rtti -fno-exceptions -fno-unwind-tables -mcpu=cortex-m3 -mthumb
+             -fno-common -fno-builtin -pedantic -DSTM32F1 \
+             -mcpu=cortex-m3 -mthumb -std=gnu99 -ffunction-sections -fdata-sections
+CPPFLAGS    = -Os -Wall -Wextra -Iinclude/ -Ilibopeninv/include -Ilibopencm3/include \
+            -fno-common -std=c++11 -pedantic -DSTM32F1 -DMAX_MESSAGES=15 \
+            -ffunction-sections -fdata-sections -fno-builtin -fno-rtti -fno-exceptions -fno-unwind-tables -mcpu=cortex-m3 -mthumb
 LDSCRIPT	  = linker.ld
 LDFLAGS    = -Llibopencm3/lib -T$(LDSCRIPT) -march=armv7 -nostartfiles -Wl,--gc-sections,-Map,linker.map
 OBJSL		  = main.o hwinit.o stm32scheduler.o params.o terminal.o terminal_prj.o \
-            my_string.o digio.o my_fp.o printf.o anain.o \
-            param_save.o errormessage.o stm32_can.o canhardware.o canmap.o cansdo.o \
-            picontroller.o terminalcommands.o PCSCan.o
+             my_string.o digio.o sine_core.o my_fp.o printf.o anain.o \
+             param_save.o errormessage.o stm32_can.o \
+             picontroller.o terminalcommands.o PCSCan.o
+
+OBJSL		  = main.o hwinit.o stm32scheduler.o params.o terminal.o terminal_prj.o \
+             my_string.o digio.o sine_core.o my_fp.o printf.o anain.o \
+             param_save.o errormessage.o stm32_can.o canhardware.o canmap.o cansdo.o sdocommands.o\
+             picontroller.o terminalcommands.o PCSCan.o
+
 OBJS     = $(patsubst %.o,obj/%.o, $(OBJSL))
-DEPENDS = $(patsubst %.o,obj/%.d, $(OBJSL))
 vpath %.c src/ libopeninv/src
 vpath %.cpp src/ libopeninv/src
 
-OPENOCD_BASE	= /usr
-OPENOCD		= $(OPENOCD_BASE)/bin/openocd
-OPENOCD_SCRIPTS	= $(OPENOCD_BASE)/share/openocd/scripts
-OPENOCD_FLASHER	= $(OPENOCD_SCRIPTS)/interface/parport.cfg
-OPENOCD_BOARD	= $(OPENOCD_SCRIPTS)/board/olimex_stm32_h103.cfg
+OPENOCD_BASE	= /c/openocd
+OPENOCD = $(OPENOCD_BASE)/bin/openocd.exe
+OPENOCD_SCRIPTS = $(OPENOCD_BASE)/share/openocd/scripts
+OPENOCD_FLASHER	= $(OPENOCD_SCRIPTS)/interface/stlink.cfg
+OPENOCD_BOARD	= $(OPENOCD_SCRIPTS)/target/stm32f1x.cfg
 
 # Be silent per default, but 'make V=1' will show all compiler calls.
 ifneq ($(V),1)
@@ -95,14 +99,13 @@ $(BINARY): $(OBJS) $(LDSCRIPT)
 	@printf "  LD      $(subst $(shell pwd)/,,$(@))\n"
 	$(Q)$(LD) $(LDFLAGS) -o $(BINARY) $(OBJS) -lopencm3_stm32f1
 
--include $(DEPENDS)
-
 $(OUT_DIR)/%.o: %.c Makefile
 	@printf "  CC      $(subst $(shell pwd)/,,$(@))\n"
-	$(Q)$(CC) $(CFLAGS) -MMD -MP -o $@ -c $<
+	$(Q)$(CC) $(CFLAGS) -o $@ -c $<
+
 $(OUT_DIR)/%.o: %.cpp Makefile
 	@printf "  CPP     $(subst $(shell pwd)/,,$(@))\n"
-	$(Q)$(CPP) $(CPPFLAGS) -MMD -MP -o $@ -c $<
+	$(Q)$(CPP) $(CPPFLAGS) -o $@ -c $<
 
 clean:
 	@printf "  CLEAN   ${OUT_DIR}\n"
@@ -135,7 +138,7 @@ get-deps:
 	@printf "  GIT SUBMODULE\n"
 	$(Q)git submodule update --init
 	@printf "  MAKE libopencm3\n"
-	$(Q)${MAKE} -C libopencm3 TARGETS=stm32/f1
+	$(Q)${MAKE} -C libopencm3
 
 Test:
 	cd test && $(MAKE)

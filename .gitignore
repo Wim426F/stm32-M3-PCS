@@ -3,3 +3,4 @@
 /obj
 linker.map
 *.bin
+stm32_pcs

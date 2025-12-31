@@ -1,5 +1,5 @@
 /*
- * This file is part of the stm32-template project.
+ * This file is part of the Model 3 PCS Controller project.
  *
  * Copyright (C) 2020 Johannes Huebner <dev@johanneshuebner.com>
  *
@@ -34,7 +34,7 @@
 #include "stm32_loader.h"
 #include "my_string.h"
 
-/**
+/*
 * Start clocks of all needed peripherals
 */
 void clock_setup(void)
@@ -123,7 +123,7 @@ void rtc_setup()
    rtc_set_counter_val(0);
 }
 
-/**
+/*
 * Setup timer for measuring 1 Khz Pilot dutycycle
 */
 void tim_setup()
