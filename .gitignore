@@ -1,0 +1,4 @@
+*.o
+obj
+linker.map
+*.bin
