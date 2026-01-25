@@ -80,8 +80,7 @@ static uint8_t pcs_alert_matrix[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 ///////PCS CAN Messages To Receive
 ///////////////////////////////////////////////////////////////////////////
 
-void PCSCan::handle204(uint32_t data[2]) // PCS Chg status.
-                                         // Power,Amps,PCS config,grid stat
+void PCSCan::handle204(uint32_t data[2]) // PCS Chg status. Power,Amps,PCS config,grid stat
 {
    uint8_t *bytes = (uint8_t *)data; // byte 0 bits 4,5 = Chg state. 0=standby, 1=blocked, 2=enabled,3=faulted.
                                      // byte 0 bits 6,7 = grid config. 0=none, 1=single phase, 2=three phase, 3=three phase delta
@@ -106,19 +105,23 @@ void PCSCan::handle204(uint32_t data[2]) // PCS Chg status.
    Param::SetInt(Param::GridCFG, PCSGrid);
 }
 
-void PCSCan::handle224(uint32_t data[2]) // DCDC Info
-
+void PCSCan::handle2B4(uint32_t data[2]) // DCDC Info
 {
    uint8_t *bytes = (uint8_t *)data;
 
-   DCDCAmps = (((bytes[3] << 8 | bytes[2]) & 0xFFF) * 0.1); // dcdc actual current. 12 bit unsigned int in bits 16-27. scale 0.1.
+   // PCS_dcdcLvBusVolt: starts at bit 0, length 10 bits, scale 0.0390625
+   LVVolts = ((bytes[0] | ((bytes[1] & 0x03) << 8)) * 0.0390625);
+   Param::SetFloat(Param::ulv, LVVolts);
+
+   // PCS_dcdcLvOutputCurrent: starts at bit 24, length 12 bits, scale 0.1
+   DCDCAmps = (((bytes[3] | ((bytes[4] & 0x0F) << 8)) & 0xFFF) * 0.1);
    Param::SetFloat(Param::idcdc, DCDCAmps);
+   
    DCDCPwr = DCDCAmps * LVVolts;
    Param::SetFloat(Param::powerdcdc, DCDCPwr);
 }
 
 void PCSCan::handle264(uint32_t data[2]) // PCS Chg Line Status
-
 {
    uint8_t *bytes = (uint8_t *)data; //
 
@@ -134,7 +137,6 @@ void PCSCan::handle264(uint32_t data[2]) // PCS Chg Line Status
 }
 
 void PCSCan::handle2A4(uint32_t data[2]) // PCS Temps
-
 {
    uint8_t *bytes = (uint8_t *)data;
    // PCS_ambientTemp bits 44 to 54 x 0.1
@@ -158,23 +160,22 @@ void PCSCan::handle2A4(uint32_t data[2]) // PCS Temps
 }
 
 void PCSCan::handle2C4(uint32_t data[2]) // PCS Logging
-
 {
    uint8_t *bytes = (uint8_t *)data;
    mux2C4 = (bytes[0]);
    if ((mux2C4 == 0xE6) || (mux2C4 == 0xC6)) // if in mux 6 grab the info...
    {
       HVVolts = (((bytes[3] << 8 | bytes[2]) & 0xFFF) * 0.146484);  // measured hv voltage. 12 bit unsigned int in bits 16-27. scale 0.146484.
-      LVVolts = ((((bytes[1] << 9 | bytes[0]) >> 6)) * 0.0390625f); // measured lv voltage. 10 bit unsigned int in bits 5-14. scale 0.0390626.
+      //LVVolts = ((((bytes[1] << 9 | bytes[0]) >> 6)) * 0.0390625f); // measured lv voltage. 10 bit unsigned int in bits 5-14. scale 0.0390626.
       Backup2c4 = false;
    }
    else if ((mux2C4 == 0x04) && (Backup2c4)) // if we dont get HV volts then switch to backup.
    {
       HVVolts = ((((bytes[7] << 8 | bytes[6]) >> 3) & 0xFFF) * 0.146484); // measured hv voltage. 12 bit unsigned int in bits 51-62. scale 0.146484.
-      LVVolts = Param::GetFloat(Param::uaux);                             // In new firmware DCDC LV is not in 0x2C4.
+      //LVVolts = Param::GetFloat(Param::uaux);                             // In new firmware DCDC LV is not in 0x2C4.
    }
    Param::SetFloat(Param::udc, HVVolts);
-   Param::SetFloat(Param::ulv, LVVolts);
+   //Param::SetFloat(Param::ulv, LVVolts);
 
    mux2C4 = (bytes[0] & 0x1F);
    if (mux2C4 == 0x00) // Calculate total DC output current from all 3 charger modules.
@@ -198,14 +199,12 @@ void PCSCan::handle2C4(uint32_t data[2]) // PCS Logging
 }
 
 void PCSCan::handle3A4(uint32_t data[2]) // PCS Alert Matrix
-
 { // 0=None, 1=CP_MIA, 2=BMS_MIA, 3=HVP_MIA, 4=UNEX_AC, 5=CHG_VRAT, 6=DCDC_VRAT, 7=VCF_MIA, 8=CAN_RAT, 9=UI_MIA
    uint8_t *bytes = (uint8_t *)data;
    PCSAlertPage = bytes[0] & 0xf;
 }
 
 void PCSCan::handle424(uint32_t data[2]) // PCS Alert Log
-
 {
    uint8_t *bytes = (uint8_t *)data;
    PCSAlertId = bytes[0];
@@ -227,7 +226,6 @@ void PCSCan::handle424(uint32_t data[2]) // PCS Alert Log
 }
 
 void PCSCan::handle504(uint32_t data[2]) // PCS Boot ID
-
 {
    uint8_t *bytes = (uint8_t *)data;
    PCSBootId = bytes[7];
@@ -235,7 +233,6 @@ void PCSCan::handle504(uint32_t data[2]) // PCS Boot ID
 }
 
 void PCSCan::handle76C(uint32_t data[2]) // PCS Debug output
-
 {
    uint8_t *bytes = (uint8_t *)data; // Mux id in byte 0.
                                      // Mux 0x0C(12) = chg phase A outputs

@@ -45,7 +45,7 @@ public:
     static void Msg545();
 
     static void handle204(uint32_t data[2]);
-    static void handle224(uint32_t data[2]);
+    static void handle2B4(uint32_t data[2]);
     static void handle264(uint32_t data[2]);
     static void handle2A4(uint32_t data[2]);
     static void handle2C4(uint32_t data[2]);

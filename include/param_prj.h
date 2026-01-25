@@ -39,18 +39,17 @@
  */
 
 //Define a version string of your firmware here
-#define VER 2.2.WIM
+#define VER 2.3.WIM
 
 /* Entries must be ordered as follows:
    1. Saveable parameters (id != 0)
    2. Temporary parameters (id = 0)
    3. Display values
  */
-//Next param id (increase when adding new parameter!): 24
-//Next value Id: 2051
+//Next param id (increase when adding new parameter!): 11
+//Next value Id: 2032
 /*              category     name         unit       min     max     default id */
 #define PARAM_LIST \
-   PARAM_ENTRY(CAT_CHARGER, pacspnt,     "W",       0,      11,     11,     0   ) \
    PARAM_ENTRY(CAT_CHARGER, idclim,      "A",       0,      45,     45,     1   ) \
    PARAM_ENTRY(CAT_CHARGER, iaclim,      "A",       0,      72,     16,     2   ) \
    PARAM_ENTRY(CAT_CHARGER, udcspnt,     "V",       50,     420,    403,    3   ) \
@@ -66,6 +65,7 @@
    VALUE_ENTRY(opmode,      OPMODES,   2001) \
    VALUE_ENTRY(chargerEnable,OFFON,    2002) \
    VALUE_ENTRY(activate,    DEVS,      2003) \
+   VALUE_ENTRY(pacspnt,     "W",       2031) \
    VALUE_ENTRY(uaux,        "V",       2004) \
    VALUE_ENTRY(hwaclim,     "A",       2005) \
    VALUE_ENTRY(powerac,     "kW",      2006) \

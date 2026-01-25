@@ -185,7 +185,7 @@ static void Ms1Task(void) // actually 10 and 100ms task effectively
       rxRead = (rxRead + 1) % 20;
       switch (m.id) {
          case 0x204: PCSCan::handle204(m.data); break;
-         case 0x224: PCSCan::handle224(m.data); break;
+         case 0x2B4: PCSCan::handle2B4(m.data); break;
          case 0x264: PCSCan::handle264(m.data); break;
          case 0x2A4: PCSCan::handle2A4(m.data); break;
          case 0x2C4: PCSCan::handle2C4(m.data); break;
@@ -282,6 +282,24 @@ static void Ms100Task(void)
 
    ChargerStateMachine();
    PCSCan::AlertHandler();
+
+   
+   // Status msg to VCU
+   if (Param::GetInt(Param::opmode) != MOD_OFF)
+   {
+      uint8_t bytes[3];
+
+      // Pack GridCFG (2 bits) and uac (10 bits) into bytes[0] and bytes[1]
+      uint16_t uac = Param::GetInt(Param::uac);
+      uint8_t gridcfg = Param::GetInt(Param::GridCFG) & 0x03;
+
+      bytes[0] = (uint8_t)(uac & 0xFF);                    // AC voltage bits 0-7
+      bytes[1] = (uint8_t)((uac >> 8) & 0x03)              // AC voltage bits 8-9 (in byte[1] bits 0-1)
+              | (gridcfg << 2);                            // GridCFG bits 0-1 (in byte[1] bits 2-3)
+      bytes[2] = (uint8_t)(Param::GetInt(Param::CHGPAvail) * 10);
+      Stm32Can::GetInterface(0)->Send(0x108, (uint32_t *)bytes, 3);
+   }
+   
 }
 
 
