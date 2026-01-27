@@ -24,6 +24,9 @@
 #include <libopencm3/stm32/can.h>
 #include <libopencm3/stm32/iwdg.h>
 #include <libopencm3/stm32/crc.h>
+#include <libopencm3/stm32/rcc.h>
+#include <libopencm3/stm32/exti.h>
+#include <libopencm3/cm3/scb.h>
 #include "stm32_can.h"
 #include "canmap.h"
 #include "cansdo.h"
@@ -67,6 +70,8 @@ static uint16_t ChgPower = 0;
 static uint8_t pwrDntmr = 10;
 static bool ZeroPower = false;
 
+#define SLEEP_TIMEOUT_SEC 300  // 5 minutes before entering sleep
+static uint16_t sleepCountdown = SLEEP_TIMEOUT_SEC * 10;
 
 static void delay_ms(int64_t FLASH_DELAY)
 {
@@ -283,6 +288,27 @@ static void Ms100Task(void)
    ChargerStateMachine();
    PCSCan::AlertHandler();
 
+   // Sleep countdown: enter low-power mode after timeout in MOD_OFF
+   if (Param::GetInt(Param::opmode) == MOD_OFF)
+   {
+      if (sleepCountdown > 0)
+      {
+         sleepCountdown--;
+      }
+      else
+      {
+         set_sleep_flag();
+         enter_stop_mode();
+         // EXTI wake: clear flag and reset for clean initialization
+         clear_sleep_flag();
+         scb_reset_system();
+      }
+   }
+   else
+   {
+      sleepCountdown = 0;
+   }
+
    
    // Status msg to VCU
    if (Param::GetInt(Param::opmode) != MOD_OFF)
@@ -296,7 +322,7 @@ static void Ms100Task(void)
       bytes[0] = (uint8_t)(uac & 0xFF);                    // AC voltage bits 0-7
       bytes[1] = (uint8_t)((uac >> 8) & 0x03)              // AC voltage bits 8-9 (in byte[1] bits 0-1)
               | (gridcfg << 2);                            // GridCFG bits 0-1 (in byte[1] bits 2-3)
-      bytes[2] = (uint8_t)(Param::GetInt(Param::CHGPAvail) * 10);
+      bytes[2] = (uint8_t)(Param::GetFloat(Param::CHGPAvail) * 10.0f);
       Stm32Can::GetInterface(0)->Send(0x108, (uint32_t *)bytes, 3);
    }
    
@@ -309,7 +335,7 @@ static void SetCanFilters()
 {
    // Set up CAN  callback and messages to listen for
    can->RegisterUserMessage(0x204); // PCS Charge Status
-   can->RegisterUserMessage(0x224); // PCS DCDC Status
+   can->RegisterUserMessage(0x2B4); // PCS DCDC Status
    can->RegisterUserMessage(0x264); // PCS Chg Line Status
    can->RegisterUserMessage(0x2A4); // PCS Temps
    can->RegisterUserMessage(0x2C4); // PCS Logging
@@ -361,9 +387,28 @@ extern "C" void tim2_isr(void)
    scheduler->Run();
 }
 
+extern "C" void exti9_5_isr(void)
+{
+   exti_reset_request(EXTI8);
+}
+
 extern "C" int main(void)
 {
    extern const TERM_CMD termCmds[];
+
+   // Enable backup domain access first (needed for sleep flag check)
+   enable_backup_domain();
+
+   // If IWDG reset while sleeping, go back to sleep immediately
+   if (was_iwdg_reset() && has_sleep_flag())
+   {
+      enter_stop_mode();
+      // EXTI woke us - fall through to normal boot
+   }
+
+   // Normal boot: clear flags
+   clear_sleep_flag();
+   clear_reset_flags();
 
    clock_setup(); // Must always come first
    rtc_setup();

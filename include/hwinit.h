@@ -32,6 +32,15 @@ void rtc_setup(void);
 void tim_setup(void);
 void write_bootloader_pininit();
 
+void enable_backup_domain(void);
+void set_sleep_flag(void);
+bool has_sleep_flag(void);
+void clear_sleep_flag(void);
+bool was_iwdg_reset(void);
+void clear_reset_flags(void);
+void enter_stop_mode(void);
+void restore_clocks(void);
+
 #ifdef __cplusplus
 }
 #endif
