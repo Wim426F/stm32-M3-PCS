@@ -31,6 +31,7 @@
 #include <libopencm3/stm32/desig.h>
 #include <libopencm3/stm32/pwr.h>
 #include <libopencm3/stm32/exti.h>
+#include <libopencm3/stm32/iwdg.h>
 #include <libopencm3/stm32/f1/bkp.h>
 #include "hwdefs.h"
 #include "hwinit.h"
@@ -204,6 +205,15 @@ void enter_stop_mode(void)
 
    // Clear any pending EXTI flags
    exti_reset_request(EXTI8);
+
+   // Stretch the IWDG to its maximum (~26s on the F1's LSI) so we are not reset
+   // every ~2s while parked. Any reset - the IWDG timeout itself, or an EXTI/CAN
+   // wake followed by scb_reset_system() - re-runs the bootloader, which restores
+   // the normal short IWDG period, so full watchdog protection is back the instant
+   // we are awake and running. We therefore never leave the watchdog stretched
+   // during normal operation.
+   iwdg_set_period_ms(32000);
+   iwdg_reset();
 
    // Enter Stop mode with voltage regulator in low-power mode
    pwr_set_stop_mode();

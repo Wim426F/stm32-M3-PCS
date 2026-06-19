@@ -70,7 +70,8 @@ static uint16_t ChgPower = 0;
 static uint8_t pwrDntmr = 10;
 static bool ZeroPower = false;
 
-#define SLEEP_TIMEOUT_SEC 300  // 5 minutes before entering sleep
+#define SLEEP_TIMEOUT_SEC 300   // 5 minutes in MOD_OFF before first entering sleep
+#define RESLEEP_WINDOW_TICKS 10 // 100ms ticks kept awake after an IWDG wake to re-check the bus (~1s)
 static uint16_t sleepCountdown = SLEEP_TIMEOUT_SEC * 10;
 
 static void delay_ms(int64_t FLASH_DELAY)
@@ -288,7 +289,9 @@ static void Ms100Task(void)
    ChargerStateMachine();
    PCSCan::AlertHandler();
 
-   // Sleep countdown: enter low-power mode after timeout in MOD_OFF
+   // Sleep handling: when parked (MOD_OFF) we count down, then enter Stop mode.
+   // We only ever sleep from here - never from the boot path - so every wake
+   // (IWDG timeout or CAN/EXTI) lands in a fully initialised, recoverable state.
    if (Param::GetInt(Param::opmode) == MOD_OFF)
    {
       if (sleepCountdown > 0)
@@ -297,16 +300,21 @@ static void Ms100Task(void)
       }
       else
       {
-         set_sleep_flag();
-         enter_stop_mode();
-         // EXTI wake: clear flag and reset for clean initialization
-         clear_sleep_flag();
+         set_sleep_flag();   // remember we are sleeping across the IWDG reset
+         enter_stop_mode();  // WFI; woken by a CAN edge (EXTI8) or the IWDG reset
+         // Only reached if EXTI woke us. Reset for a clean, correct-clock boot
+         // (Stop mode drops us back to HSI). The flag stays set so the boot path
+         // re-checks the bus for a short window and only fully wakes once a real
+         // RUN/CHARGE command arrives - a spurious CAN edge just re-sleeps.
          scb_reset_system();
       }
    }
    else
    {
-      sleepCountdown = 0;
+      // Car is actually in use - we are truly awake. Drop the sleep state and
+      // re-arm the full idle timeout for the next time we are parked.
+      clear_sleep_flag();
+      sleepCountdown = SLEEP_TIMEOUT_SEC * 10;
    }
 
    
@@ -399,15 +407,15 @@ extern "C" int main(void)
    // Enable backup domain access first (needed for sleep flag check)
    enable_backup_domain();
 
-   // If IWDG reset while sleeping, go back to sleep immediately
-   if (was_iwdg_reset() && has_sleep_flag())
-   {
-      enter_stop_mode();
-      // EXTI woke us - fall through to normal boot
-   }
-
-   // Normal boot: clear flags
-   clear_sleep_flag();
+   // Brick-proof sleep: we NEVER enter Stop mode from the boot path. The MCU
+   // always boots all the way to a fully initialised, CAN- and SWD-responsive
+   // state. The backup-domain flag only tells us whether we were parked and
+   // sleeping; if so we stay up for a short window (below) to re-check the bus
+   // and go back to sleep from the 100ms task if still idle. A stale flag left
+   // over after a brown-out therefore self-heals into one short wake cycle
+   // instead of locking the module up (the old boot-path Stop trap could get
+   // stuck re-sleeping forever, recoverable only by reflashing).
+   bool wasSleeping = has_sleep_flag();
    clear_reset_flags();
 
    clock_setup(); // Must always come first
@@ -453,6 +461,11 @@ extern "C" int main(void)
    s.AddTask(Ms100Task, 100);
    s.AddTask(Ms50Task, 50);
    s.AddTask(Ms1Task, 1);
+
+   // If we just woke from a parked sleep, only stay up briefly to re-check the
+   // bus before re-sleeping; otherwise use the full idle timeout before the
+   // first sleep. The 100ms task drives the countdown and the Stop entry.
+   sleepCountdown = wasSleeping ? RESLEEP_WINDOW_TICKS : (SLEEP_TIMEOUT_SEC * 10);
 
    // backward compatibility, version 4 was the first to support the "stream" command
    Param::SetInt(Param::version, 4);
