@@ -71,9 +71,10 @@ uint8_t PCSAlertPage = 0;
 uint8_t PCSAlertId = 0;    
 uint8_t PCSAlertSource = 0;
 uint8_t PCS_AlertCnt = 0;  
-uint16_t AlertCANId = 0;   
-uint8_t AlertRxError = 0;  
-static uint8_t pcs_alert_matrix[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+uint16_t AlertCANId = 0;
+uint8_t AlertRxError = 0;
+static uint8_t pcs_alert_matrix[10] __attribute__((unused)) = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}; // legacy 0x424 log buffer
+static uint8_t pcs_alert_active[121] = {0}; // live active flags from 0x3A4 matrix, indexed by alert ID (1..102)
 
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -198,24 +199,38 @@ void PCSCan::handle2C4(uint32_t data[2]) // PCS Logging
    Param::SetFloat(Param::idc, IOut_Total);
 }
 
-void PCSCan::handle3A4(uint32_t data[2]) // PCS Alert Matrix
-{ // 0=None, 1=CP_MIA, 2=BMS_MIA, 3=HVP_MIA, 4=UNEX_AC, 5=CHG_VRAT, 6=DCDC_VRAT, 7=VCF_MIA, 8=CAN_RAT, 9=UI_MIA
+void PCSCan::handle3A4(uint32_t data[2]) // PCS Alert Matrix (live bitmap of currently-active alerts)
+{
+   // Multiplexed by PCS_matrixIndex (byte 0, low nibble). Each page carries 60 alerts in bits 4..63:
+   // page 0 -> alerts 1..60, page 1 -> alerts 61..120. For page p, bit b -> alertID = p*60 + (b-3).
+   // Writing both 1s and 0s here means each page frame auto-clears alerts that are no longer active.
    uint8_t *bytes = (uint8_t *)data;
-   PCSAlertPage = bytes[0] & 0xf;
+   uint8_t page = bytes[0] & 0x0F; // PCS_matrixIndex multiplexor
+   PCSAlertPage = page;
+   for (uint8_t bit = 4; bit < 64; bit++)
+   {
+      uint8_t id = page * 60 + (bit - 3); // bit 4 -> first alert of this page
+      if (id > 102)
+         break; // ignore undefined bits beyond the last alert
+      pcs_alert_active[id] = (bytes[bit >> 3] >> (bit & 0x07)) & 0x01;
+   }
 }
 
 void PCSCan::handle424(uint32_t data[2]) // PCS Alert Log
 {
    uint8_t *bytes = (uint8_t *)data;
    PCSAlertId = bytes[0];
-   if (Param::GetBool(Param::AlertLog))
-   {
-      pcs_alert_matrix[PCS_AlertCnt] = PCSAlertId;
-      PCS_AlertCnt++;
-      if (PCS_AlertCnt > 10)
-         PCS_AlertCnt = 0;
-      Param::SetInt(Param::PCSAlertCnt, PCS_AlertCnt);
-   }
+
+   // Legacy 0x424 alert-log buffer. Display is now driven by the live 0x3A4 matrix (see handle3A4 /
+   // AlertHandler). Kept commented for reference; do not remove yet.
+   // if (Param::GetBool(Param::AlertLog))
+   // {
+   //    pcs_alert_matrix[PCS_AlertCnt] = PCSAlertId;
+   //    PCS_AlertCnt++;
+   //    if (PCS_AlertCnt > 10)
+   //       PCS_AlertCnt = 0;
+   //    Param::SetInt(Param::PCSAlertCnt, PCS_AlertCnt);
+   // }
 
    if (PCSAlertId == 0x1E) // 0x1E = Alert30= CAN rationality.
    {
@@ -512,16 +527,36 @@ void PCSCan::Msg545()
       Count545 = 0;
 }
 
-void PCSCan::AlertHandler() // Alert handler
+void PCSCan::AlertHandler() // Publish the live active-alert set (from 0x3A4) as 4 combined flag fields
 {
-   Param::SetInt(Param::PCSAlerts, pcs_alert_matrix[Param::GetInt(Param::Alerts)]);
-   if (!Param::GetBool(Param::AlertLog))
+   // 102 alerts can't fit one fixed-point flag field (s32fp caps usable flags at bit 25), so the
+   // active set is packed into four 26-bit groups. Flag value for alert N in group G is
+   // 1 << ((N-1) % 26); the web UI renders each group combined as "a | b | c".
+   int32_t grp[4] = {0, 0, 0, 0};
+   uint8_t count = 0;
+   for (uint8_t id = 1; id <= 102; id++)
    {
-      PCS_AlertCnt = 0;
-      Param::SetInt(Param::PCSAlertCnt, PCS_AlertCnt);
-      for (int i = 0; i < 10; i++)
-         pcs_alert_matrix[i] = 0; // Clear log and counter when PCS alert logging disabled
+      if (pcs_alert_active[id])
+      {
+         grp[(id - 1) / 26] |= 1 << ((id - 1) % 26);
+         count++;
+      }
    }
+   Param::SetInt(Param::PCSAlerts1, grp[0]); // alerts 1-26
+   Param::SetInt(Param::PCSAlerts2, grp[1]); // alerts 27-52
+   Param::SetInt(Param::PCSAlerts3, grp[2]); // alerts 53-78
+   Param::SetInt(Param::PCSAlerts4, grp[3]); // alerts 79-102
+   Param::SetInt(Param::PCSAlertCnt, count);
+
+   // Legacy 0x424 log display (kept for reference; do not remove yet):
+   // Param::SetInt(Param::PCSAlerts, pcs_alert_matrix[Param::GetInt(Param::Alerts)]);
+   // if (!Param::GetBool(Param::AlertLog))
+   // {
+   //    PCS_AlertCnt = 0;
+   //    Param::SetInt(Param::PCSAlertCnt, PCS_AlertCnt);
+   //    for (int i = 0; i < 10; i++)
+   //       pcs_alert_matrix[i] = 0; // Clear log and counter when PCS alert logging disabled
+   // }
 }
 
 static uint8_t CalcPCSChecksum(uint8_t *bytes, uint16_t id)
