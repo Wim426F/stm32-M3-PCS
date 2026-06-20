@@ -68,7 +68,6 @@ static uint32_t startTime;
 static bool CAN_Enable = false;
 static uint16_t ChgPower = 0;
 static bool ZeroPower = false;
-static bool shutdownComplete = false;
 
 #define SLEEP_TIMEOUT_SEC 300   // 5 minutes in MOD_OFF before first entering sleep
 #define RESLEEP_WINDOW_TICKS 10 // 100ms ticks kept awake after an IWDG wake to re-check the bus (~1s)
