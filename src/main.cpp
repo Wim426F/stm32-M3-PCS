@@ -67,8 +67,8 @@ static Terminal* terminal;
 static uint32_t startTime;
 static bool CAN_Enable = false;
 static uint16_t ChgPower = 0;
-static uint8_t pwrDntmr = 10;
 static bool ZeroPower = false;
+static bool shutdownComplete = false;
 
 #define SLEEP_TIMEOUT_SEC 300   // 5 minutes in MOD_OFF before first entering sleep
 #define RESLEEP_WINDOW_TICKS 10 // 100ms ticks kept awake after an IWDG wake to re-check the bus (~1s)
@@ -79,20 +79,6 @@ static void delay_ms(int64_t FLASH_DELAY)
     int64_t i;
     for (i = 0; i < (FLASH_DELAY * 2000); i++)
     __asm__("nop");
-}
-
-static bool CheckDelay()
-{
-   uint32_t now = rtc_get_counter_val();
-   uint32_t start = Param::GetInt(Param::timedly) * 60;
-   if (start < 60)
-   {
-      return 1;
-   }
-   else
-   {
-      return start > 0 && (now - startTime) > start;
-   }
 }
 
 void handle109(uint32_t data[2])
@@ -126,11 +112,10 @@ static void ChargerStateMachine()
    case MOD_OFF:
       ZeroPower = true; // charger power =0 in off.
       CAN_Enable = false;
-      pwrDntmr = 10;    // reset powerdown timer
 
-      DigIo::pcsena_out.Clear();
-      DigIo::dcdcena_out.Set();
-      DigIo::chena_out.Set();
+      DigIo::pcsena_out.Clear();    // pcs off
+      DigIo::dcdcena_out.Set();     // DC-DC off   
+      DigIo::chena_out.Set();       // PCS off
       Param::SetInt(Param::activate, EN_NONE);
       break;
 
@@ -141,9 +126,9 @@ static void ChargerStateMachine()
       ZeroPower = true; // charger power=0 in drive.
       CAN_Enable = true;
 
-      DigIo::pcsena_out.Set();
-      DigIo::chena_out.Set(); // charger off
-      DigIo::dcdcena_out.Clear(); // DC-DC on   
+      DigIo::pcsena_out.Set();      // pcs on
+      DigIo::chena_out.Set();       // charger off
+      DigIo::dcdcena_out.Clear();   // DC-DC on   
       Param::SetInt(Param::activate, EN_DCDC);   
       break;
 
@@ -153,10 +138,22 @@ static void ChargerStateMachine()
       CAN_Enable = true;
 
       if (!ZeroPower)  DigIo::chena_out.Clear(); // charger on
-      DigIo::pcsena_out.Set();
+      DigIo::pcsena_out.Set(); // pcs on
       DigIo::dcdcena_out.Clear();   // DC-DC on
       Param::SetInt(Param::activate, EN_BOTH);
+      break;
+   
+   case MOD_REQUEST_OFF:
+      // Graceful pre-OFF: command the PCS to wind down charger + DC-DC over CAN and
+      // hold here until the VCU opens the contactors / commands MOD_OFF. The PCS
+      // obeys the CAN content, so the enable pins must AGREE with 0x22A / 0x2B2.
+      ZeroPower = true;                        // 0x2B2 charge-power request -> 0
+      CAN_Enable = true;                       // keep the bus fed (no MIA, hears the shutdown)
+      Param::SetInt(Param::activate, EN_NONE); // 0x22A: shut down charger AND DC-DC
 
+      DigIo::pcsena_out.Set();    // keep PCS powered
+      DigIo::dcdcena_out.Set();   // DC-DC disable
+      DigIo::chena_out.Set();     // charger disable
       break;
    
    default:
@@ -169,16 +166,14 @@ uint16_t ChgPwrRamp()
    uint8_t Charger_state = Param::GetInt(Param::CHG_STAT);
    uint16_t Charger_Pwr_Max = Param::GetInt(Param::pacspnt);
    if (Charger_state != chargerStates::ENABLE)
-      ChgPower = 0; // Set power =0 unless charger is enabled.
+      ChgPower = 0; // Set power 0 immediately
    if (ZeroPower)
       ChgPower = 0;
-   else
-   {
-      if (ChgPower < Charger_Pwr_Max)
-         ChgPower += 10;
-      if (ChgPower > Charger_Pwr_Max)
-         ChgPower -= 10;
-   }
+   else if (ChgPower < Charger_Pwr_Max)
+      ChgPower += 100;
+   else if (ChgPower > Charger_Pwr_Max)
+      ChgPower -= 50;
+
 
    return ChgPower;
 }

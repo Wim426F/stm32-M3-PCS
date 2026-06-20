@@ -102,7 +102,7 @@
 
 /***** Enum String definitions *****/
 #define CANSPEEDS    "0=125k, 1=250k, 2=500k, 3=800k, 4=1M"
-#define OPMODES      "0=Off, 1=Run, 2=Precharge, 3=PchFail, 4=Charge"
+#define OPMODES      "0=Off, 1=Run, 2=Precharge, 3=PchFail, 4=Charge ,5=ShutdownReq"
 #define CHARGERS     "1=Charger1, 2=Charger2, 4=Charger3"
 #define C_STAT       "0=Init, 1=Idle, 2=Startup, 3=WaitAC, 4=Qualify, 5=Config, 6=Enable, 7=Shutdown, 8=Faulted, 9=CLRFaults"
 #define OFFON        "0=Off, 1=On"
@@ -153,6 +153,7 @@ enum modes
    MOD_PRECHARGE,
    MOD_PCHFAIL,
    MOD_CHARGE,
+   MOD_REQUEST_OFF,
    MOD_LAST
 };
 
