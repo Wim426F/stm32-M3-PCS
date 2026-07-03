@@ -162,18 +162,13 @@ static void ChargerStateMachine()
 
 uint16_t ChgPwrRamp()
 {
-   uint8_t Charger_state = Param::GetInt(Param::CHG_STAT);
-   uint16_t Charger_Pwr_Max = Param::GetInt(Param::pacspnt);
-   if (Charger_state != chargerStates::ENABLE)
-      ChgPower = 0; // Set power 0 immediately
-   if (ZeroPower)
-      ChgPower = 0;
-   else if (ChgPower < Charger_Pwr_Max)
-      ChgPower += 100;
-   else if (ChgPower > Charger_Pwr_Max)
-      ChgPower -= 50;
-
-
+   uint16_t target = Param::GetInt(Param::pacspnt);
+   if (ZeroPower || Param::GetInt(Param::CHG_STAT) != chargerStates::ENABLE)
+      ChgPower = 0; // instant 0 power
+   else if (ChgPower < target)
+      ChgPower = (target - ChgPower > 100) ? ChgPower + 100 : target; // ramp up, clamped
+   else if (ChgPower > target)
+      ChgPower = (ChgPower - target > 10)  ? ChgPower - 10  : target; // ease down, clamped
    return ChgPower;
 }
 
