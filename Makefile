@@ -138,7 +138,7 @@ get-deps:
 	@printf "  GIT SUBMODULE\n"
 	$(Q)git submodule update --init
 	@printf "  MAKE libopencm3\n"
-	$(Q)${MAKE} -C libopencm3
+	$(Q)${MAKE} -C libopencm3 TARGETS="stm32/f1"
 
 Test:
 	cd test && $(MAKE)
