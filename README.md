@@ -2,6 +2,10 @@
 02/09/22: V1 of new firmware for STM32 based Tesla Model 3 PCS Controller.
 30/12/25: Complete rewrite of Damien's work by Wim Boone. PCS controller is now slave to the Zombieverter VCU and compatible as "Tesla Charger"
 
+Note: the controller expects switched (ignition) 12V - it has no low-power sleep mode.
+A CAN-wake sleep mode implementation is preserved on the `sleep-mode` branch but proved
+unreliable in the field and was removed from main.
+
 # Compiling
 You will need the arm-none-eabi toolchain: https://developer.arm.com/open-source/gnu-toolchain/gnu-rm/downloads
 

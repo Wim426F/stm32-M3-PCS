@@ -29,10 +29,6 @@
 #include <libopencm3/stm32/crc.h>
 #include <libopencm3/stm32/flash.h>
 #include <libopencm3/stm32/desig.h>
-#include <libopencm3/stm32/pwr.h>
-#include <libopencm3/stm32/exti.h>
-#include <libopencm3/stm32/iwdg.h>
-#include <libopencm3/stm32/f1/bkp.h>
 #include "hwdefs.h"
 #include "hwinit.h"
 #include "stm32_loader.h"
@@ -148,80 +144,4 @@ void tim_setup()
    timer_ic_enable(TIM3, TIM_IC2);
    timer_generate_event(TIM3, TIM_EGR_UG);
    timer_enable_counter(TIM3);
-}
-
-//-----------------------------------------------------------------------------
-// Low-power sleep mode support
-//-----------------------------------------------------------------------------
-
-#define SLEEP_FLAG_MAGIC 0xBEEF
-
-void enable_backup_domain(void)
-{
-   rcc_periph_clock_enable(RCC_PWR);
-   rcc_periph_clock_enable(RCC_BKP);
-   pwr_disable_backup_domain_write_protect();
-}
-
-void set_sleep_flag(void)
-{
-   BKP_DR1 = SLEEP_FLAG_MAGIC;
-}
-
-bool has_sleep_flag(void)
-{
-   return (BKP_DR1 == SLEEP_FLAG_MAGIC);
-}
-
-void clear_sleep_flag(void)
-{
-   BKP_DR1 = 0;
-}
-
-bool was_iwdg_reset(void)
-{
-   return (RCC_CSR & RCC_CSR_IWDGRSTF) != 0;
-}
-
-void clear_reset_flags(void)
-{
-   RCC_CSR |= RCC_CSR_RMVF;
-}
-
-static void configure_exti_wakeup(void)
-{
-   // CAN RX is on PB8 (remapped). Configure EXTI8 to wake on falling edge.
-   rcc_periph_clock_enable(RCC_GPIOB);
-   rcc_periph_clock_enable(RCC_AFIO);
-   exti_select_source(EXTI8, GPIOB);
-   exti_set_trigger(EXTI8, EXTI_TRIGGER_FALLING);
-   exti_enable_request(EXTI8);
-   nvic_enable_irq(NVIC_EXTI9_5_IRQ);
-}
-
-void enter_stop_mode(void)
-{
-   configure_exti_wakeup();
-
-   // Clear any pending EXTI flags
-   exti_reset_request(EXTI8);
-
-   // Stretch the IWDG to its maximum (~26s on the F1's LSI) so we are not reset
-   // every ~2s while parked. Any reset - the IWDG timeout itself, or an EXTI/CAN
-   // wake followed by scb_reset_system() - re-runs the bootloader, which restores
-   // the normal short IWDG period, so full watchdog protection is back the instant
-   // we are awake and running. We therefore never leave the watchdog stretched
-   // during normal operation.
-   iwdg_set_period_ms(32000);
-   iwdg_reset();
-
-   // Enter Stop mode with voltage regulator in low-power mode
-   pwr_set_stop_mode();
-   pwr_voltage_regulator_low_power_in_stop();
-   SCB_SCR |= SCB_SCR_SLEEPDEEP;
-
-   __asm__("wfi");
-
-   // Execution resumes here after EXTI wake
-   SCB_SCR &= ~SCB_SCR_SLEEPDEEP;
 }
