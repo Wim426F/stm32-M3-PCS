@@ -57,6 +57,15 @@ static bool CAN_Enable = false;
 static uint16_t ChgPower = 0;
 static bool ZeroPower = false;
 
+// VCU status-bit (0x108) fault detection: debounce counters, ticked once per Ms100Task cycle (100ms).
+#define PCS_MIA_TIMEOUT_TICKS 10  // 1.0s without a 0x204/0x2B4 frame -> PCS presumed unreachable
+#define DCDC_FAULT_TICKS      30  // 3.0s of zero DC-DC output current while DC-DC is commanded on
+#define CHG_FAULT_TICKS       150 // 15s of zero charger output current while charging is commanded
+static uint16_t rx204Age = 0;            // ticks since last 0x204 (PCS charge status) frame
+static uint16_t rx2B4Age = 0;            // ticks since last 0x2B4 (PCS DC-DC status) frame
+static uint16_t dcdcZeroCurrentTicks = 0;
+static uint16_t chgZeroCurrentTicks = 0;
+
 void handle109(uint32_t data[2])
 {
    uint8_t* bytes = (uint8_t*)data;//Mux id in byte 0.
@@ -187,6 +196,25 @@ static void Ms100Task(void)
    ChargerStateMachine();
    PCSCan::AlertHandler();
 
+   // Track PCS comms liveness and sustained zero-output conditions for the VCU status bits below.
+   // Age counters keep advancing even off-mode so they reflect true elapsed time once active again.
+   if (rx204Age < 0xFFFF) rx204Age++;
+   if (rx2B4Age < 0xFFFF) rx2B4Age++;
+
+   bool dcdcCommanded = (Param::GetInt(Param::activate) & EN_DCDC) != 0;
+   if (dcdcCommanded && Param::GetFloat(Param::idcdc) <= 0.0f)
+      dcdcZeroCurrentTicks = (dcdcZeroCurrentTicks < 0xFFFF) ? dcdcZeroCurrentTicks + 1 : dcdcZeroCurrentTicks;
+   else
+      dcdcZeroCurrentTicks = 0;
+
+   bool chgCommanded = Param::GetInt(Param::opmode) == MOD_CHARGE
+                     && Param::GetInt(Param::chargerEnable)
+                     && Param::GetInt(Param::pacspnt) > 0;
+   if (chgCommanded && Param::GetFloat(Param::idc) <= 0.0f)
+      chgZeroCurrentTicks = (chgZeroCurrentTicks < 0xFFFF) ? chgZeroCurrentTicks + 1 : chgZeroCurrentTicks;
+   else
+      chgZeroCurrentTicks = 0;
+
    if (CAN_Enable)
    {
       // Send 100ms PCS CAN when enabled.
@@ -211,9 +239,22 @@ static void Ms100Task(void)
       uint16_t uac = Param::GetInt(Param::uac);
       uint8_t gridcfg = Param::GetInt(Param::GridCFG) & 0x03;
 
+      // Charger/DC-DC fault: PCS unreachable (no 0x204/0x2B4 for >1s), PCS reports FAULTED (charger
+      // only), or sustained zero output current while that subsystem is actually commanded on.
+      // "Other alert" is a low-detail catch-all for anything not covered by the two bits above.
+      bool chgFault = (rx204Age > PCS_MIA_TIMEOUT_TICKS)
+                    || (Param::GetInt(Param::CHG_STAT) == chargerStates::FAULTED)
+                    || (chgZeroCurrentTicks > CHG_FAULT_TICKS);
+      bool dcdcFault = (rx2B4Age > PCS_MIA_TIMEOUT_TICKS)
+                     || (dcdcZeroCurrentTicks > DCDC_FAULT_TICKS);
+      bool otherAlert = Param::GetInt(Param::PCSAlertCnt) > 0;
+
       bytes[0] = (uint8_t)(uac & 0xFF);                    // AC voltage bits 0-7
       bytes[1] = (uint8_t)((uac >> 8) & 0x03)              // AC voltage bits 8-9 (in byte[1] bits 0-1)
-              | (gridcfg << 2);                            // GridCFG bits 0-1 (in byte[1] bits 2-3)
+              | (gridcfg << 2)                              // GridCFG bits 0-1 (in byte[1] bits 2-3)
+              | (chgFault << 4)                             // Charger_Fault (byte[1] bit 4)
+              | (dcdcFault << 5)                            // DCDC_Fault (byte[1] bit 5)
+              | (otherAlert << 6);                          // PCS_Other_Alert (byte[1] bit 6)
       bytes[2] = (uint8_t)(Param::GetFloat(Param::CHGPAvail) * 10.0f);
       Stm32Can::GetInterface(0)->Send(0x108, (uint32_t *)bytes, 3);
    }
@@ -263,8 +304,8 @@ static bool CanCallback(uint32_t id, uint32_t data[2], uint8_t dlc) // Called wh
    dlc = dlc;
    switch (id)
    {
-   case 0x204: PCSCan::handle204(data); break; // PCS Charge status
-   case 0x2B4: PCSCan::handle2B4(data); break; // DCDC info
+   case 0x204: PCSCan::handle204(data); rx204Age = 0; break; // PCS Charge status
+   case 0x2B4: PCSCan::handle2B4(data); rx2B4Age = 0; break; // DCDC info
    case 0x264: PCSCan::handle264(data); break; // PCS Charge Line Status
    case 0x2A4: PCSCan::handle2A4(data); break; // PCS Temps
    case 0x2C4: PCSCan::handle2C4(data); break; // PCS Logging
