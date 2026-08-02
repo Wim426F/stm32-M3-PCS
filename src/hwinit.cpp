@@ -115,6 +115,16 @@ void nvic_setup(void)
    nvic_set_priority(NVIC_TIM2_IRQ, 0xe << 4); //second lowest priority
 }
 
+/* Same level as the TIM2 scheduler: equal priority never preempts, so a Send()
+ * from task context cannot interrupt HandleTx(), and RX handlers cannot
+ * interrupt tasks. Call after the Stm32Can ctor, which sets its own. */
+void nvic_can_setup(void)
+{
+   nvic_set_priority(NVIC_USB_HP_CAN_TX_IRQ,  0xe << 4);
+   nvic_set_priority(NVIC_USB_LP_CAN_RX0_IRQ, 0xe << 4);
+   nvic_set_priority(NVIC_CAN_RX1_IRQ,        0xe << 4);
+}
+
 void rtc_setup()
 {
    //Base clock is HSE/128 = 8MHz/128 = 62.5kHz

@@ -46,15 +46,6 @@
 
 extern "C" void __cxa_pure_virtual() { while (1); }
 
-struct CanMsg {
-   uint32_t id;
-   uint32_t data[2];
-   uint8_t dlc;
-};
-static CanMsg rxQueue[20];  // Circular buffer (size 20 for bursts)
-static volatile int rxWrite = 0;  // ISR writes
-static volatile int rxRead = 0;   // Task reads
-
 static Stm32Scheduler *scheduler;
 static CanHardware* can;
 static CanMap* canMap;
@@ -65,13 +56,6 @@ static uint32_t startTime;
 static bool CAN_Enable = false;
 static uint16_t ChgPower = 0;
 static bool ZeroPower = false;
-
-static void delay_ms(int64_t FLASH_DELAY)
-{
-    int64_t i;
-    for (i = 0; i < (FLASH_DELAY * 2000); i++)
-    __asm__("nop");
-}
 
 void handle109(uint32_t data[2])
 {
@@ -165,82 +149,14 @@ uint16_t ChgPwrRamp()
    return ChgPower;
 }
 
-static void Ms1Task(void) // actually 10 and 100ms task effectively
+static void Ms10Task(void)
 {
-   // Process RX queue here instead of in ISR CanCallback, this avoids ISR interrupting too long
-   while (rxRead != rxWrite) {
-      CanMsg m = rxQueue[rxRead];
-      rxRead = (rxRead + 1) % 20;
-      switch (m.id) {
-         case 0x204: PCSCan::handle204(m.data); break;
-         case 0x2B4: PCSCan::handle2B4(m.data); break;
-         case 0x264: PCSCan::handle264(m.data); break;
-         case 0x2A4: PCSCan::handle2A4(m.data); break;
-         case 0x2C4: PCSCan::handle2C4(m.data); break;
-         case 0x3A4: PCSCan::handle3A4(m.data); break;
-         case 0x424: PCSCan::handle424(m.data); break;
-         case 0x504: PCSCan::handle504(m.data); break;
-         case 0x76C: PCSCan::handle76C(m.data); break;
-         case 0x109: handle109(m.data); break;
-         default: break;
-      }
-   }
+   if (!CAN_Enable) return;
 
-
-   /* * FIXME: The CAN driver currently struggles with TX Mailbox congestion
-      * when firing many messages back-to-back. Instead of using blocking delays,
-      * we stagger the messages across a 100ms window using the 1ms base task.
-      * This ensures the hardware mailboxes have time to clear between bursts.
-   */
-   static uint8_t tick_count = 0; // 0-99 (100ms cycle)
-
-   if (!CAN_Enable)
-   {
-      tick_count = 0;
-      return;
-   }
-
-   // Handle the 10ms messages (Total: 3 messages)
-   // We fire these at 5ms, 15ms, 25ms... 95ms
-   if ((tick_count % 10) == 5)
-   {
-      PCSCan::Msg13D();
-      PCSCan::Msg22A();
-      PCSCan::Msg3B2();
-   }
-
-   // Handle the 100ms messages (Total: 11 messages)
-   // We spread these out so we never hit the driver too hard
-   switch (tick_count)
-   {
-      case 0:
-         PCSCan::Msg20A();
-         PCSCan::Msg212();
-         break;
-      case 10:
-         PCSCan::Msg21D();
-         PCSCan::Msg232();
-         break;
-      case 20:
-         PCSCan::Msg23D();
-         PCSCan::Msg25D();
-         break;
-      case 30:
-         PCSCan::Msg2B2(ChgPwrRamp());
-         PCSCan::Msg321();
-         break;
-      case 40:
-         PCSCan::Msg333();
-         PCSCan::Msg3A1();
-         break;
-   }
-
-   // Increment and wrap
-   tick_count++;
-   if (tick_count >= 100)
-   {
-      tick_count = 0;
-   }
+   // Send 10ms PCS CAN when enabled.
+   PCSCan::Msg13D();
+   PCSCan::Msg22A();
+   PCSCan::Msg3B2();
 }
 
 static void Ms50Task(void)
@@ -270,6 +186,21 @@ static void Ms100Task(void)
 
    ChargerStateMachine();
    PCSCan::AlertHandler();
+
+   if (CAN_Enable)
+   {
+      // Send 100ms PCS CAN when enabled.
+      PCSCan::Msg20A();
+      PCSCan::Msg212();
+      PCSCan::Msg21D();
+      PCSCan::Msg232();
+      PCSCan::Msg23D();
+      PCSCan::Msg25D();
+      PCSCan::Msg2B2(ChgPwrRamp());
+      PCSCan::Msg321();
+      PCSCan::Msg333();
+      PCSCan::Msg3A1();
+   }
 
    // Status msg to VCU
    if (Param::GetInt(Param::opmode) != MOD_OFF)
@@ -327,16 +258,22 @@ void Param::Change(Param::PARAM_NUM paramNum)
    }
 }
 
-static bool CanCallback(uint32_t id, uint32_t data[2], uint8_t dlc) {
-   // queue all messages instead of processing the handlers directly, this avoids ISR interrupting too long
-   int nextWrite = (rxWrite + 1) % 20;
-   if (nextWrite != rxRead) {
-      rxQueue[rxWrite].id = id;
-      rxQueue[rxWrite].data[0] = data[0];
-      rxQueue[rxWrite].data[1] = data[1];
-      rxQueue[rxWrite].dlc = dlc;
-      rxWrite = nextWrite;
-      return true;
+static bool CanCallback(uint32_t id, uint32_t data[2], uint8_t dlc) // Called when a defined CAN message is received.
+{
+   dlc = dlc;
+   switch (id)
+   {
+   case 0x204: PCSCan::handle204(data); break; // PCS Charge status
+   case 0x2B4: PCSCan::handle2B4(data); break; // DCDC info
+   case 0x264: PCSCan::handle264(data); break; // PCS Charge Line Status
+   case 0x2A4: PCSCan::handle2A4(data); break; // PCS Temps
+   case 0x2C4: PCSCan::handle2C4(data); break; // PCS Logging
+   case 0x3A4: PCSCan::handle3A4(data); break; // PCS Alert Matrix
+   case 0x424: PCSCan::handle424(data); break; // PCS Alert Log
+   case 0x504: PCSCan::handle504(data); break; // PCS Boot ID
+   case 0x76C: PCSCan::handle76C(data); break; // PCS Debug output
+   case 0x109: handle109(data);         break; // VCU charge request and power limits
+   default: break;
    }
    return false;
 }
@@ -369,6 +306,7 @@ extern "C" int main(void)
 
    Stm32Can c(CAN1, (CanHardware::baudrates)Param::GetInt(Param::canspeed), true);
    can = &c;
+   nvic_can_setup(); // must come after the ctor, which sets its own priorities
    can->AddCallback(&canCb);
    SetCanFilters();
 
@@ -394,7 +332,7 @@ extern "C" int main(void)
    // There you can also configure the priority of the scheduler over other interrupts
    s.AddTask(Ms100Task, 100);
    s.AddTask(Ms50Task, 50);
-   s.AddTask(Ms1Task, 1);
+   s.AddTask(Ms10Task, 10);
 
    // backward compatibility, version 4 was the first to support the "stream" command
    Param::SetInt(Param::version, 4);

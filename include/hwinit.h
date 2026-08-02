@@ -28,6 +28,7 @@ extern "C"
 
 void clock_setup(void);
 void nvic_setup(void);
+void nvic_can_setup(void);
 void rtc_setup(void);
 void tim_setup(void);
 void write_bootloader_pininit();
