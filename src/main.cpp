@@ -296,13 +296,8 @@ void Param::Change(Param::PARAM_NUM paramNum)
 {
    switch (paramNum)
    {
-   case Param::canspeed: 
-      can->SetBaudrate((CanHardware::baudrates)Param::GetInt(Param::canspeed));
-      break;
-
    case Param::nodeid:
       canSdo->SetNodeId(Param::GetInt(Param::nodeid)); //Set node ID for SDO access
-      //can->RegisterUserMessage(0x600 + Param::GetInt(Param::nodeid)); // Dynamic CanSDO request COB-ID (0x600 + Node-ID)
       break;
 
    default:
@@ -357,7 +352,7 @@ extern "C" int main(void)
    //store a pointer for easier access
    FunctionPointerCallback canCb(CanCallback, SetCanFilters);
 
-   Stm32Can c(CAN1, (CanHardware::baudrates)Param::GetInt(Param::canspeed), true);
+   Stm32Can c(CAN1, CanHardware::Baud500, true);
    can = &c;
    nvic_can_setup(); // must come after the ctor, which sets its own priorities
    can->AddCallback(&canCb);

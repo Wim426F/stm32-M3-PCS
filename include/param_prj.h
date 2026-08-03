@@ -47,27 +47,24 @@
    3. Display values
  */
 //Next param id (increase when adding new parameter!): 11
-//Next value Id: 2036
+//Next value Id: 2038
 /*              category     name         unit       min     max     default id */
 #define PARAM_LIST \
-   PARAM_ENTRY(CAT_CHARGER, idclim,      "A",       0,      45,     45,     1   ) \
-   PARAM_ENTRY(CAT_CHARGER, iaclim,      "A",       0,      72,     16,     2   ) \
-   PARAM_ENTRY(CAT_CHARGER, udcspnt,     "V",       50,     420,    403,    3   ) \
    PARAM_ENTRY(CAT_CHARGER, timelim,     "minutes", -1,     10000,  -1,     4   ) \
    PARAM_ENTRY(CAT_CHARGER, timedly,     "minutes", -1,     10000,  -1,     5   ) \
    PARAM_ENTRY(CAT_CHARGER, modelcode,   MODELS,    0,      1,      0,      6  ) \
    PARAM_ENTRY(CAT_DCDC,    udcdc,       "V",       12,     15,     14,     7  ) \
-   /* PARAM_ENTRY(CAT_GEN,     Alerts,      "",        0,      9,      0,      8  ) // old 0x424 log index selector, kept for reference */ \
    PARAM_ENTRY(CAT_GEN,     AlertLog,    OFFON,     0,      1,      1,      9  ) \
    PARAM_ENTRY(CAT_COMM,    nodeid,      "",        1,      63,     49,     10  ) \
-   PARAM_ENTRY(CAT_COMM,    canspeed,    CANSPEEDS, 0,      4,      2,      11  ) \
    VALUE_ENTRY(version,     VERSTR,    2000) \
    VALUE_ENTRY(opmode,      OPMODES,   2001) \
    VALUE_ENTRY(chargerEnable,OFFON,    2002) \
    VALUE_ENTRY(activate,    DEVS,      2003) \
    VALUE_ENTRY(pacspnt,     "W",       2031) \
+   VALUE_ENTRY(udcspnt,     "V",       2037) \
    VALUE_ENTRY(uaux,        "V",       2004) \
    VALUE_ENTRY(hwaclim,     "A",       2005) \
+   VALUE_ENTRY(iaclim,      "A",       2036) \
    VALUE_ENTRY(powerac,     "kW",      2006) \
    VALUE_ENTRY(powerdcdc,   "W",       2007) \
    VALUE_ENTRY(udc,         "V",       2008) \
@@ -101,7 +98,6 @@
 
 
 /***** Enum String definitions *****/
-#define CANSPEEDS    "0=125k, 1=250k, 2=500k, 3=800k, 4=1M"
 #define OPMODES      "0=Off, 1=Run, 2=Precharge, 3=PchFail, 4=Charge ,5=ShutdownReq"
 #define CHARGERS     "1=Charger1, 2=Charger2, 4=Charger3"
 #define C_STAT       "0=Init, 1=Idle, 2=Startup, 3=WaitAC, 4=Qualify, 5=Config, 6=Enable, 7=Shutdown, 8=Faulted, 9=CLRFaults"
