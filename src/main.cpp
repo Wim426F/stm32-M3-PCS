@@ -57,6 +57,10 @@ static bool CAN_Enable = false;
 static uint16_t ChgPower = 0;
 static bool ZeroPower = false;
 
+// Charge power request ramp (0x2B2), stepped once per Ms100Task cycle (100ms).
+#define CHG_PWR_RAMP_UP 100 // W per 100ms ramping towards a higher setpoint (1kW/s)
+#define CHG_PWR_RAMP_DN 100 // W per 100ms easing towards a lower setpoint (1kW/s)
+
 // VCU status-bit (0x108) fault detection: debounce counters, ticked once per Ms100Task cycle (100ms).
 #define PCS_MIA_TIMEOUT_TICKS 10  // 1.0s without a 0x204/0x2B4 frame -> PCS presumed unreachable
 #define DCDC_FAULT_TICKS      30  // 3.0s of zero DC-DC output current while DC-DC is commanded on
@@ -148,13 +152,19 @@ static void ChargerStateMachine()
 
 uint16_t ChgPwrRamp()
 {
-   uint16_t target = Param::GetInt(Param::pacspnt);
-   if (ZeroPower || Param::GetInt(Param::CHG_STAT) != chargerStates::ENABLE)
-      ChgPower = 0; // instant 0 power
-   else if (ChgPower < target)
-      ChgPower = (target - ChgPower > 100) ? ChgPower + 100 : target; // ramp up, clamped
-   else if (ChgPower > target)
-      ChgPower = (ChgPower - target > 10)  ? ChgPower - 10  : target; // ease down, clamped
+   uint8_t Charger_state = Param::GetInt(Param::CHG_STAT);
+   uint16_t Charger_Pwr_Max = Param::GetInt(Param::pacspnt);
+
+   if (Charger_state != chargerStates::ENABLE)
+      ChgPower = 0; // Set power 0 immediately
+
+   if (ZeroPower)
+      ChgPower = 0;
+   else if (ChgPower < Charger_Pwr_Max) // ramp up, clamped so we land exactly on the setpoint
+      ChgPower = (Charger_Pwr_Max - ChgPower > CHG_PWR_RAMP_UP) ? ChgPower + CHG_PWR_RAMP_UP : Charger_Pwr_Max;
+   else if (ChgPower > Charger_Pwr_Max) // ease down, clamped so we land exactly on the setpoint
+      ChgPower = (ChgPower - Charger_Pwr_Max > CHG_PWR_RAMP_DN) ? ChgPower - CHG_PWR_RAMP_DN : Charger_Pwr_Max;
+
    return ChgPower;
 }
 
