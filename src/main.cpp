@@ -58,8 +58,9 @@ static uint16_t ChgPower = 0;
 static bool ZeroPower = false;
 
 // Charge power request ramp (0x2B2), stepped once per Ms100Task cycle (100ms).
-#define CHG_PWR_RAMP_UP 100 // W per 100ms ramping towards a higher setpoint (1kW/s)
-#define CHG_PWR_RAMP_DN 100 // W per 100ms easing towards a lower setpoint (1kW/s)
+// DO NOT EVER TOUCH THE RAMP TIME!!!! CHARGER WILL NOT ACCEPT ANY FASTER!!!
+#define CHG_PWR_RAMP_UP 10 // W per 100ms ramping towards a higher setpoint (100W/s)
+#define CHG_PWR_RAMP_DN 10 // W per 100ms easing towards a lower setpoint (100W/s)
 
 // VCU status-bit (0x108) fault detection: debounce counters, ticked once per Ms100Task cycle (100ms).
 #define PCS_MIA_TIMEOUT_TICKS 10  // 1.0s without a 0x204/0x2B4 frame -> PCS presumed unreachable
@@ -184,7 +185,7 @@ static void Ms50Task(void)
    {
       // Send 50ms PCS CAN when enabled.
       PCSCan::Msg545();
-      PCSCan::Msg221();
+      // PCSCan::Msg221(); // VCFRONT emulation, disabled while chasing a charge fault
    }
 }
 
@@ -239,7 +240,7 @@ static void Ms100Task(void)
       PCSCan::Msg321();
       PCSCan::Msg333();
       PCSCan::Msg3A1();
-      PCSCan::Msg2D1();
+      // PCSCan::Msg2D1(); // VCFRONT emulation, disabled while chasing a charge fault
    }
 
    // Status msg to VCU

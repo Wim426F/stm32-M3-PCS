@@ -91,6 +91,9 @@
    VALUE_ENTRY(PCSAlerts2,  ALERTGRP2, 2033) \
    VALUE_ENTRY(PCSAlerts3,  ALERTGRP3, 2034) \
    VALUE_ENTRY(PCSAlerts4,  ALERTGRP4, 2035) \
+   VALUE_ENTRY(PCSAcKWh,    "kWh",     2038) \
+   VALUE_ENTRY(PCSDcdcKWh,  "kWh",     2039) \
+   VALUE_ENTRY(PCSBattKWh,  "kWh",     2040) \
    VALUE_ENTRY(lasterr,errorListString,2028) \
    VALUE_ENTRY(uptime,      "s",       2029) \
    VALUE_ENTRY(cpuload,     "%",       2030) \

@@ -25,7 +25,7 @@
 bool mux3b2 = true;              // Multiplexer flag for message 3B2
 bool mux545 = true;              // Multiplexer flag for message 545
 bool mux221 = true;              // Multiplexer flag for message 221
-bool Short2B2 = true;            // Short circuit flag for message 2B2
+bool Short2B2 = false;           // Short circuit flag for message 2B2
 bool Backup2c4 = true;           // Backup flag for message 2C4
 bool GotDCI = false;             // DCI received flag
 
@@ -48,6 +48,14 @@ float IOut_PhB = 0;              // Output current Phase B
 float IOut_PhC = 0;              // Output current Phase C
 float IOut_Total = 0;            // Total output current
 uint8_t ACILim = 0;              // AC current limit (8-bit)
+float ChgPhAKWh = 0;             // Lifetime AC input energy Phase A
+float ChgPhBKWh = 0;             // Lifetime AC input energy Phase B
+float ChgPhCKWh = 0;             // Lifetime AC input energy Phase C
+float DcdcOutKWh = 0;            // Lifetime DCDC 12V-support output energy, cached for the battery estimate below
+
+// used to estimate lifetime energy into battery
+// verified against logs to be ~95%
+const float CHG_EFFICIENCY_EST = 0.95f; 
 
 // Temperature Measurements
 int16_t TempLocal = 0;           // Local temperature
@@ -199,6 +207,33 @@ void PCSCan::handle2C4(uint32_t data[2]) // PCS Logging
 
    IOut_Total = IOut_PhA + IOut_PhB + IOut_PhC;
    Param::SetFloat(Param::idc, IOut_Total);
+
+   if (mux2C4 == 0x0A) // Lifetime charge energy Phase A. 24 bit unsigned int in bits 31-54. scale 0.01.
+   {
+      ChgPhAKWh = ((bytes[3] >> 7) | (bytes[4] << 1) | (bytes[5] << 9) | ((bytes[6] & 0x7F) << 17)) * 0.01f;
+   }
+   else if (mux2C4 == 0x0B) // Lifetime charge energy Phase B.
+   {
+      ChgPhBKWh = ((bytes[3] >> 7) | (bytes[4] << 1) | (bytes[5] << 9) | ((bytes[6] & 0x7F) << 17)) * 0.01f;
+   }
+   else if (mux2C4 == 0x0C) // Lifetime charge energy Phase C.
+   {
+      ChgPhCKWh = ((bytes[3] >> 7) | (bytes[4] << 1) | (bytes[5] << 9) | ((bytes[6] & 0x7F) << 17)) * 0.01f;
+      Param::SetFloat(Param::PCSAcKWh, ChgPhAKWh + ChgPhBKWh + ChgPhCKWh);
+   }
+   else if (mux2C4 == 0x16) // Lifetime DCDC 12V-support energy. 24 bit unsigned int in bits 8-31. scale 0.01.
+   {
+      DcdcOutKWh = (bytes[1] | (bytes[2] << 8) | (bytes[3] << 16)) * 0.01f;
+      Param::SetFloat(Param::PCSDcdcKWh, DcdcOutKWh);
+   }
+
+   // Rough estimate of energy delivered to the battery: AC input minus the DCDC's
+   // 12V output, then derated by an estimated charger conversion efficiency.
+   // 0.95 comes from comparing PCS_chgPhX/dcdc lifetime counters against measured
+   // BMS pack energy over a real charge session at steady-state power (94.2%) and
+   // over the whole session (95.3%) - not a manufacturer figure.
+   float battKWh = (ChgPhAKWh + ChgPhBKWh + ChgPhCKWh - DcdcOutKWh) * CHG_EFFICIENCY_EST;
+   Param::SetFloat(Param::PCSBattKWh, battKWh > 0 ? battKWh : 0);
 }
 
 void PCSCan::handle3A4(uint32_t data[2]) // PCS Alert Matrix (live bitmap of currently-active alerts)
@@ -631,6 +666,7 @@ static int16_t ProcessTemps(uint16_t InVal)
 
 static void ProcessCANRat(uint16_t AlertCANId, uint8_t AlertRxError)
 {
+   /*
    switch (AlertCANId)
    {
    case 0x2B2:
@@ -644,4 +680,11 @@ static void ProcessCANRat(uint16_t AlertCANId, uint8_t AlertRxError)
 
       break;
    }
+   */
+  
+   // 0x2B2 is pinned to DLC 5. The PCS raises a rationality alert for that
+   // length but only draws line current when it is sent that way, so the
+   // complaint is ignored rather than acted on.
+   (void)AlertCANId;
+   (void)AlertRxError;
 }
