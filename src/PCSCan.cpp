@@ -24,7 +24,8 @@
 // PCS Control Flags
 bool mux3b2 = true;              // Multiplexer flag for message 3B2
 bool mux545 = true;              // Multiplexer flag for message 545
-bool Short2B2 = false;           // Short circuit flag for message 2B2
+bool mux221 = true;              // Multiplexer flag for message 221
+bool Short2B2 = true;            // Short circuit flag for message 2B2
 bool Backup2c4 = true;           // Backup flag for message 2C4
 bool GotDCI = false;             // DCI received flag
 
@@ -65,6 +66,7 @@ uint8_t mux2C4 = 0;              // Multiplexer for message 2C4
 uint8_t mux76C = 0;              // Multiplexer for message 76C
 uint8_t PCSBootId = 0;           // PCS boot ID
 uint8_t Count545 = 0;            // Counter for message 545
+uint8_t Count221 = 0;            // Counter for message 221
 
 // Alert Handling
 uint8_t PCSAlertPage = 0;  
@@ -491,6 +493,48 @@ void PCSCan::Msg3B2()
       Stm32Can::GetInterface(0)->Send(0x3B2, (uint32_t *)bytes, 8);
       mux3b2 = true;
    }
+}
+
+void PCSCan::Msg221() // VCFRONT_LVPowerState. Payloads captured from a Model 3; mux0 and mux1 share a counter value.
+{
+   uint8_t bytes[8];
+   if (mux221) // index 1, carries pcsLVState = LV_ON
+   {
+      bytes[0] = 0x41;
+      bytes[1] = 0x01;
+      bytes[2] = 0x05;
+      bytes[3] = 0x00;
+      bytes[4] = 0x00;
+      bytes[5] = 0x00;
+      bytes[6] = (Count221 << 5);
+      bytes[7] = CalcPCSChecksum((uint8_t *)bytes, 0x221);
+      Stm32Can::GetInterface(0)->Send(0x221, (uint32_t *)bytes, 8);
+      mux221 = false;
+   }
+   else // index 0
+   {
+      bytes[0] = 0x40;
+      bytes[1] = 0x41;
+      bytes[2] = 0x05;
+      bytes[3] = 0x15;
+      bytes[4] = 0x00;
+      bytes[5] = 0x50;
+      bytes[6] = (Count221 << 5) | 0x11;
+      bytes[7] = CalcPCSChecksum((uint8_t *)bytes, 0x221);
+      Stm32Can::GetInterface(0)->Send(0x221, (uint32_t *)bytes, 8);
+      mux221 = true;
+      Count221++;
+      if (Count221 > 0x07)
+         Count221 = 0;
+   }
+}
+
+void PCSCan::Msg2D1() // VCFRONT_okToUseHighPower, all consumers permitted
+{
+   uint8_t bytes[8] = {0};
+   bytes[0] = 0xFF;
+   bytes[1] = 0x01;
+   Stm32Can::GetInterface(0)->Send(0x2D1, (uint32_t *)bytes, 2);
 }
 
 void PCSCan::Msg545()

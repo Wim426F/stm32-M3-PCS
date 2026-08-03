@@ -184,6 +184,7 @@ static void Ms50Task(void)
    {
       // Send 50ms PCS CAN when enabled.
       PCSCan::Msg545();
+      PCSCan::Msg221();
    }
 }
 
@@ -238,6 +239,7 @@ static void Ms100Task(void)
       PCSCan::Msg321();
       PCSCan::Msg333();
       PCSCan::Msg3A1();
+      PCSCan::Msg2D1();
    }
 
    // Status msg to VCU

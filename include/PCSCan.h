@@ -31,6 +31,8 @@ class PCSCan
 public:
     static void Msg13D();
     static void Msg20A();
+    static void Msg221();
+    static void Msg2D1();
     static void Msg212();
     static void Msg21D();
     static void Msg22A();
